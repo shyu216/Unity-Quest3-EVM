@@ -13,12 +13,12 @@ MonoBehaviour:
   m_Name: ImmersiveDebuggerSettings
   m_EditorClassIdentifier: 
   debugTypes: []
-  immersiveDebuggerEnabled: 0
+  immersiveDebuggerEnabled: 1
   immersiveDebuggerDisplayAtStartup: 0
   showInspectors: 0
   showConsole: 0
   followOverride: 1
-  rotateOverride: 0
+  rotateOverride: 1
   showInfoLog: 0
   showWarningLog: 1
   showErrorLog: 1
