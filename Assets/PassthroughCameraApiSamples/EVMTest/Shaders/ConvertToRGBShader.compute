@@ -1,0 +1,22 @@
+#pragma kernel CSMain
+
+// Input and output textures
+Texture2D<float4> InputTexture;
+RWTexture2D<float4> OutputTexture;
+
+[numthreads(8, 8, 1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    float4 color = InputTexture[id.xy];
+
+    // Convert YCrCb to RGB
+    float Y = color.r;
+    float Cr = color.g;
+    float Cb = color.b;
+
+    float R = Y + 1.403 * Cr;
+    float G = Y - 0.344 * Cb - 0.714 * Cr;
+    float B = Y + 1.773 * Cb;
+
+    OutputTexture[id.xy] = float4(R, G, B, 1.0);
+}
