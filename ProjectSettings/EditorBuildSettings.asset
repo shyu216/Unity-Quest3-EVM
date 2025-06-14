@@ -20,12 +20,12 @@ EditorBuildSettings:
   - enabled: 0
     path: Assets/PassthroughCameraApiSamples/MultiObjectDetection/MultiObjectDetection.unity
     guid: 20c230cce46443841b5727b1d6100bfc
-  - enabled: 0
+  - enabled: 1
     path: Assets/PassthroughCameraApiSamples/ShaderSample/ShaderSample.unity
     guid: 708e8dca6055146b28afe2481f141457
   - enabled: 1
     path: Assets/PassthroughCameraApiSamples/EVMTest/EVMTest.unity
-    guid: 4896b844a7b9e8145b14426819faa55b
+    guid: f86c75c197e4d12479ae6ad09558435e
   m_configObjects:
     Unity.XR.Oculus.Settings: {fileID: 11400000, guid: f2bf97b3acdb64248a707c407c9fc54e, type: 2}
     com.unity.xr.management.loader_settings: {fileID: 11400000, guid: a971eac5e950046e586c5e153e32d05c, type: 2}

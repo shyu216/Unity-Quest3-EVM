@@ -9,10 +9,10 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 {
     float4 color = InputTexture[id.xy];
 
-    // Convert RGB to YCrCb
-    float Y = 0.299 * color.r + 0.587 * color.g + 0.114 * color.b;
-    float Cr = (color.r - Y) * 0.713;
-    float Cb = (color.b - Y) * 0.564;
-
+    // Convert RGB to YCrCb (BT.2020)
+    float Y = 0.2627 * color.r + 0.6780 * color.g + 0.0593 * color.b;
+    float Cr = (color.r - Y) / 1.4746;
+    float Cb = (color.b - Y) / 1.8814;
+    
     OutputTexture[id.xy] = float4(Y, Cr, Cb, 1.0);
 }
