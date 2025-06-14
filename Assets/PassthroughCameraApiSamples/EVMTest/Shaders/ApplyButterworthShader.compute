@@ -1,0 +1,26 @@
+#pragma kernel ApplyButterworth
+
+// Input and output textures
+Texture2D<float4> InputTexture;
+Texture2D<float4> PrevTexture;
+RWTexture2D<float4> LowPassTexture;
+
+// Filter coefficients
+float2 A;
+float2 B;
+
+[numthreads(8, 8, 1)]
+void ApplyButterworth (uint3 id : SV_DispatchThreadID)
+{
+    // Get current pixel coordinates
+    float4 tempColor = InputTexture[id.xy];
+    float4 lowpassColor = LowPassTexture[id.xy];
+    float4 prevColor = PrevTexture[id.xy];
+
+    // Apply Butterworth filter
+    float lowPassR = -B.y * lowpassColor.r + A.x * tempColor.r + A.y * prevColor.r;
+    float lowPassG = -B.y * lowpassColor.g + A.x * tempColor.g + A.y * prevColor.g;
+    float lowPassB = -B.y * lowpassColor.b + A.x * tempColor.b + A.y * prevColor.b;
+
+    LowPassTexture[id.xy] = float4(lowPassR / B.x, lowPassG / B.x, lowPassB / B.x, 1.0);
+}

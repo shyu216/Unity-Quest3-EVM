@@ -1,0 +1,21 @@
+// filepath: c:\Users\LMAPA\Documents\GitHub\Unity-Quest3-EVM\Assets\PassthroughCameraApiSamples\EVMTest\Shaders\AddShader.compute
+#pragma kernel Add
+
+// Input and output textures
+Texture2D<float4> TextureA;
+Texture2D<float4> TextureB;
+RWTexture2D<float4> OutputTexture;
+
+// Optional scale factors
+float ScaleA = 1.0;
+float ScaleB = 1.0;
+
+[numthreads(8, 8, 1)]
+void Add (uint3 id : SV_DispatchThreadID)
+{
+    // Add two textures with optional scaling
+    float4 colorA = TextureA[id.xy] * ScaleA;
+    float4 colorB = TextureB[id.xy] * ScaleB;
+    
+    OutputTexture[id.xy] = colorA + colorB;
+}

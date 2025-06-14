@@ -1,0 +1,15 @@
+#pragma kernel Downsample
+
+// Input and output textures
+Texture2D<float4> InputTexture; // 2W x 2H texture
+RWTexture2D<float4> OutputTexture; // W x H texture
+
+[numthreads(8, 8, 1)]
+void Downsample (uint3 id : SV_DispatchThreadID)
+{
+    // Downsample the input texture by averaging 2x2 blocks
+    float2 uv = id.xy * 2; 
+    float4 color = (InputTexture[uv] + InputTexture[uv + float2(1, 0)] +
+                    InputTexture[uv + float2(0, 1)] + InputTexture[uv + float2(1, 1)]) / 4.0;
+    OutputTexture[id.xy] = color;
+}

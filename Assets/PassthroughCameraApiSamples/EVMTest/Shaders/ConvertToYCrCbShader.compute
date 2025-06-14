@@ -1,11 +1,11 @@
-#pragma kernel CSMain
+#pragma kernel ConvertToYCrCb
 
 // Input and output textures
 Texture2D<float4> InputTexture;
 RWTexture2D<float4> OutputTexture;
 
 [numthreads(8, 8, 1)]
-void CSMain (uint3 id : SV_DispatchThreadID)
+void ConvertToYCrCb (uint3 id : SV_DispatchThreadID)
 {
     float4 color = InputTexture[id.xy];
 

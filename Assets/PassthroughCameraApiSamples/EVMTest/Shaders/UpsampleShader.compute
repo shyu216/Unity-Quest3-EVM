@@ -1,0 +1,17 @@
+#pragma kernel Upsample
+
+// Input and output textures
+Texture2D<float4> InputTexture; // W x H texture
+RWTexture2D<float4> OutputTexture; // 2W x 2H texture
+
+[numthreads(8, 8, 1)]
+void Upsample (uint3 id : SV_DispatchThreadID)
+{
+    // Upsample the input texture by copying pixels to a 2x2 block
+    float2 uv = id.xy * 2; 
+    float4 color = InputTexture[id.xy];
+    OutputTexture[uv] = color;
+    OutputTexture[uv + float2(1, 0)] = color;
+    OutputTexture[uv + float2(0, 1)] = color;
+    OutputTexture[uv + float2(1, 1)] = color;
+}

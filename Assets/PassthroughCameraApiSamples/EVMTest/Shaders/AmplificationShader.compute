@@ -1,0 +1,16 @@
+#pragma kernel Amplification
+
+// Input and output textures
+Texture2D<float4> InputTexture;
+RWTexture2D<float4> OutputTexture;
+
+// Amplification factor
+float AmplifyFactor;
+
+[numthreads(8, 8, 1)]
+void Amplification (uint3 id : SV_DispatchThreadID)
+{
+    // Amplify the filtered signal
+    float4 color = InputTexture[id.xy];
+    OutputTexture[id.xy] = color * AmplifyFactor; // Use the input amplification factor
+}

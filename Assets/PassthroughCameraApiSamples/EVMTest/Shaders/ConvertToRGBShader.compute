@@ -1,11 +1,17 @@
-#pragma kernel CSMain
+#pragma kernel ConvertToRGB
 
 // Input and output textures
 Texture2D<float4> InputTexture;
 RWTexture2D<float4> OutputTexture;
 
+// Conversion coefficients for YCrCb to RGB (BT.2020)
+static const float CR_R_COEFF = 1.4746;
+static const float CR_G_COEFF = -(0.2627 * 1.4746 / 0.6780);
+static const float CB_G_COEFF = -(0.0593 * 1.8814 / 0.6780);
+static const float CB_B_COEFF = 1.8814;
+
 [numthreads(8, 8, 1)]
-void CSMain (uint3 id : SV_DispatchThreadID)
+void ConvertToRGB (uint3 id : SV_DispatchThreadID)
 {
     float4 color = InputTexture[id.xy];
 
@@ -14,9 +20,9 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     float Cr = color.g;
     float Cb = color.b;
 
-    float R = Y + 1.4746 * Cr;
-    float G = Y - (0.2627 * 1.4746 / 0.6780) * Cr - (0.0593 * 1.8814 / 0.6780) * Cb;
-    float B = Y + 1.8814 * Cb;
+    float R = Y + CR_R_COEFF * Cr;
+    float G = Y + CR_G_COEFF * Cr + CB_G_COEFF * Cb;
+    float B = Y + CB_B_COEFF * Cb;
 
     OutputTexture[id.xy] = float4(R, G, B, 1.0);
 }
