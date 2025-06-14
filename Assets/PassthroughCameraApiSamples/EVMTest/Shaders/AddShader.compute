@@ -16,6 +16,7 @@ void Add (uint3 id : SV_DispatchThreadID)
     // Add two textures with optional scaling
     float4 colorA = TextureA[id.xy] * ScaleA;
     float4 colorB = TextureB[id.xy] * ScaleB;
-    
-    OutputTexture[id.xy] = colorA + colorB;
+    float4 colorC = colorA + colorB; 
+    colorC.a = 1.0; // Ensure alpha is set to 1.0
+    OutputTexture[id.xy] = colorC;
 }

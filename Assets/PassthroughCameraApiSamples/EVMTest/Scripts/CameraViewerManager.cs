@@ -156,18 +156,26 @@ namespace PassthroughCameraSamples.EVMTest
                 ReleaseRenderTextures4TestPyramid();
                 downsampledTextures = new RenderTexture[4];
                 upsampledTextures = new RenderTexture[4];
-                addedTextures = new RenderTexture[1];
+                addedTextures = new RenderTexture[4];
+                for (int i = 0; i < 4; i++)
+                {
+                    downsampledTextures[i] = new RenderTexture(width / (1 << (i + 1)), height / (1 << (i + 1)), 0, RenderTextureFormat.ARGBHalf);
+                    downsampledTextures[i].enableRandomWrite = true;
+                    downsampledTextures[i].Create();
+                    upsampledTextures[i] = new RenderTexture(width / (1 << i), height / (1 << i), 0, RenderTextureFormat.ARGBHalf);
+                    upsampledTextures[i].enableRandomWrite = true;
+                    upsampledTextures[i].Create();
+                    addedTextures[i] = new RenderTexture(width / (1 << i), height / (1 << i), 0, RenderTextureFormat.ARGBHalf);
+                    addedTextures[i].enableRandomWrite = true;
+                    addedTextures[i].Create();
+                }
             }
             Graphics.Blit(frame, _renderTexture);
 
-            // Downsample the RGB texture 4 times
+            // Downsample the RGB texture 4 times, namely Gaussian pyramid
             for (int i = 0; i < 4; i++)
             {
                 Debug.Log($"Creating downsampled texture {i} with width={width / (1 << (i + 1))}, height={height / (1 << (i + 1))}");
-                downsampledTextures[i] = new RenderTexture(width / (1 << (i + 1)), height / (1 << (i + 1)), 0, RenderTextureFormat.ARGB32);
-                downsampledTextures[i].enableRandomWrite = true;
-                downsampledTextures[i].Create();
-
                 if (i == 0)
                 {
                     m_downsampleComputeShader.SetTexture(0, "InputTexture", _renderTexture);
@@ -181,47 +189,49 @@ namespace PassthroughCameraSamples.EVMTest
             }
 
             Debug.Log($"Downsampled textures created: {downsampledTextures.Length}");
-            m_debugImage.texture = downsampledTextures[0];
-            m_debugImage2.texture = downsampledTextures[1];
+            m_debugImage4.texture = downsampledTextures[0];
+            m_debugImage5.texture = downsampledTextures[3];
 
             // Upsample the downsampled textures
             for (int i = 3; i >= 0; i--)
             {
                 Debug.Log($"Creating upsampled texture {i} with width={width / (1 << i)}, height={height / (1 << i)}");
-                upsampledTextures[i] = new RenderTexture(width / (1 << i), height / (1 << i), 0, RenderTextureFormat.ARGB32);
-                upsampledTextures[i].enableRandomWrite = true;
-                upsampledTextures[i].Create();
 
-                if (i == 3)
-                {
-                    m_upsampleComputeShader.SetTexture(0, "InputTexture", downsampledTextures[i]);
-                }
-                else
-                {
-                    m_upsampleComputeShader.SetTexture(0, "InputTexture", upsampledTextures[i + 1]);
-                }
+                m_upsampleComputeShader.SetTexture(0, "InputTexture", downsampledTextures[i]);
                 m_upsampleComputeShader.SetTexture(0, "OutputTexture", upsampledTextures[i]);
                 m_upsampleComputeShader.Dispatch(0, downsampledTextures[i].width / 8, downsampledTextures[i].height / 8, 1);
             }
 
             Debug.Log($"Upsampled textures created: {upsampledTextures.Length}");
-            m_debugImage3.texture = upsampledTextures[0];
-            m_debugImage4.texture = upsampledTextures[1];
+            m_debugImage2.texture = upsampledTextures[0];
+            m_debugImage3.texture = upsampledTextures[3];
 
-            // Add the downsampled and upsampled textures
-            m_addComputeShader.SetFloat("ScaleA", 1);
-            m_addComputeShader.SetFloat("ScaleB", -1);
-
-            addedTextures[0] = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB32);
-            addedTextures[0].enableRandomWrite = true;
-            addedTextures[0].Create();
-            m_addComputeShader.SetTexture(0, "TextureA", _rgbTexture);
-            m_addComputeShader.SetTexture(0, "TextureB", upsampledTextures[0]);
-            m_addComputeShader.SetTexture(0, "OutputTexture", addedTextures[0]);
-            m_addComputeShader.Dispatch(0, width / 8, height / 8, 1);
+            // Add the downsampled and upsampled textures, namely Laplacian pyramid
+            m_addComputeShader.SetFloat("ScaleA", 1.0f);
+            m_addComputeShader.SetFloat("ScaleB", -1.0f);
+            for (int i = 0; i < 4; i++)
+            {
+                if (i == 0)
+                {
+                    Debug.Log($"Texture A: {_renderTexture.width}x{_renderTexture.height}, " +
+                              $"Texture B: {upsampledTextures[0].width}x{upsampledTextures[0].height}, " +
+                              $"Output Texture: {addedTextures[0].width}x{addedTextures[0].height}");
+                    m_addComputeShader.SetTexture(0, "TextureA", _renderTexture);
+                }
+                else
+                {
+                    Debug.Log($"Texture A: {downsampledTextures[i - 1].width}x{downsampledTextures[i - 1].height}, " +
+                              $"Texture B: {upsampledTextures[i].width}x{upsampledTextures[i].height}, " +
+                              $"Output Texture: {addedTextures[i].width}x{addedTextures[i].height}");
+                    m_downsampleComputeShader.SetTexture(0, "TextureA", downsampledTextures[i - 1]);
+                }
+                m_addComputeShader.SetTexture(0, "TextureB", upsampledTextures[i]);
+                m_addComputeShader.SetTexture(0, "OutputTexture", addedTextures[i]);
+                m_addComputeShader.Dispatch(0, addedTextures[i].width / 8, addedTextures[i].height / 8, 1);
+            }
 
             Debug.Log($"Added textures created: {addedTextures.Length}");
-            m_debugImage5.texture = addedTextures[0];
+            m_debugImage.texture = addedTextures[0];
         }
 
 

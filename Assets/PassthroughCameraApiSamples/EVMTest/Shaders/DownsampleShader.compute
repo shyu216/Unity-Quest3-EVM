@@ -11,5 +11,6 @@ void Downsample (uint3 id : SV_DispatchThreadID)
     float2 uv = id.xy * 2; 
     float4 color = (InputTexture[uv] + InputTexture[uv + float2(1, 0)] +
                     InputTexture[uv + float2(0, 1)] + InputTexture[uv + float2(1, 1)]) / 4.0;
+    color.a = 1.0; // Ensure alpha is set to 1.0
     OutputTexture[id.xy] = color;
 }
