@@ -291,7 +291,6 @@ namespace PassthroughCameraSamples.EVMTest
             }
         }
 
-        private int fixedFrameCount = 0;
         private int actualFps = 0;
 
         private RenderTexture[] gaussianPyramidTextures;
@@ -399,8 +398,8 @@ namespace PassthroughCameraSamples.EVMTest
                 }
 
                 // EVM Step: set Butterworth coefficients according to current fps
-                fixedFrameCount++;
                 int currentFps = (int)(1.0f / Time.fixedDeltaTime);
+                Debug.Log($"FixedUpdate called. Current FPS: {currentFps}, Actual FPS: {actualFps}, Target FPS: {fps}");
                 if (currentFps != actualFps)
                 {
                     actualFps = currentFps;
@@ -429,9 +428,24 @@ namespace PassthroughCameraSamples.EVMTest
                     lastHeight = height;
                     Debug.Log($"Creating new RenderTextures for EVM. Width={width}, Height={height}");
 
-                    int smallerAxis = Mathf.Min(width, height);
-                    actualNLevels = Mathf.Min(nLevels, Mathf.FloorToInt(Mathf.Log(smallerAxis, 2)) - 1);
-                    Debug.Log($"Actual number of levels in the pyramid: {actualNLevels}");
+                    // Caution! Hard to handle the resize in upsample, it is better to resize the input frame before processing the whole EVM steps.
+                    int validNLevels = 1;
+                    int w = width;
+                    int h = height;
+                    while (w > 8 && h > 8 && validNLevels < nLevels)
+                    {
+                        // Break if width or height is not even
+                        if (w % 2 != 0 || h % 2 != 0)
+                        {
+                            Debug.LogWarning($"Width or height is not even. Width={w}, Height={h}. Stopping pyramid levels at {validNLevels}.");
+                            break;
+                        }
+                        w /= 2;
+                        h /= 2;
+                        validNLevels++;
+                    }
+                    actualNLevels = Mathf.Min(validNLevels, nLevels);
+                    Debug.Log($"Desired number of levels: {nLevels}, Actual number of levels that runs without bugs: {actualNLevels}");
 
                     // Create RenderTextures for EVM
                     gaussianPyramidTextures = new RenderTexture[actualNLevels];
