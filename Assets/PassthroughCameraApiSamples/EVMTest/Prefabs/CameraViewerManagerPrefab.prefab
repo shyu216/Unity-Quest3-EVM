@@ -310,7 +310,7 @@ MonoBehaviour:
   m_FallbackScreenDPI: 96
   m_DefaultSpriteDPI: 96
   m_DynamicPixelsPerUnit: 1
-  m_PresetInfoIsWorld: 0
+  m_PresetInfoIsWorld: 1
 --- !u!114 &4920789567304922927
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -358,6 +358,12 @@ MonoBehaviour:
   m_debugImage3: {fileID: 5746351328766258378}
   m_debugImage4: {fileID: 1374106213775790477}
   m_debugImage5: {fileID: 2817559659076237023}
+  fl: 1
+  fh: 1.6666666
+  fps: 30
+  amplificationFactor: 50
+  nLevels: 4
+  attenuationFactor: 1
 --- !u!1 &6124042056721883567
 GameObject:
   m_ObjectHideFlags: 0

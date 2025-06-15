@@ -33,6 +33,19 @@ namespace PassthroughCameraSamples.EVMTest
         [SerializeField] private RawImage m_debugImage4;
         [SerializeField] private RawImage m_debugImage5;
 
+        public float fl = 60.0f / 60.0f; // Frequency low, 60 beats per minute
+        public float fh = 100.0f / 60.0f; // Frequency high, 100 beats per minute
+        public float fps = 30.0f; // Sample rate of the camera
+        public float amplificationFactor = 50.0f; // Amplification factor
+        public int nLevels = 4; // Number of levels in the pyramid
+        public float attenuationFactor = 1.0f; // Attenuation factor for the Cr and Cb channels, 1 means no attenuation
+
+        // Butterworth coefficients
+        private float[] lowA;
+        private float[] lowB;
+        private float[] highA;
+        private float[] highB;
+
         private IEnumerator Start()
         {
             while (m_webCamTextureManager.WebCamTexture == null)
@@ -42,13 +55,21 @@ namespace PassthroughCameraSamples.EVMTest
             m_titleText.text = "EVM Test";
             // Set WebCamTexture GPU texture to the RawImage Ui element
             m_image.texture = m_webCamTextureManager.WebCamTexture;
+
+            // Set frame rate of FixedUpdate
+            Time.fixedDeltaTime = 1.0f / fps;
+            // Set frame rate of WebCamTexture, not work
+            // m_webCamTextureManager.WebCamTexture.requestedFPS = fps;
+            // Set frame rate of Update, not work
+            // Application.targetFrameRate = (int)fps;
+            // m_titleText.text += $" Cam: {m_webCamTextureManager.WebCamTexture.requestedFPS}, Upd: {1.0f / Time.fixedDeltaTime:F2}, App: {Application.targetFrameRate}";
         }
 
-        private RenderTexture _renderTexture;
-        private RenderTexture _ycrcbTexture;
-        private RenderTexture _rgbTexture;
-        private int _lastWidth = 0;
-        private int _lastHeight = 0;
+        private RenderTexture renderTexture;
+        private RenderTexture ycrcbTexture;
+        private RenderTexture rgbTexture;
+        private int lastWidth = 0;
+        private int lastHeight = 0;
 
         private RenderTexture[] downsampledTextures;
         private RenderTexture[] upsampledTextures;
@@ -85,44 +106,44 @@ namespace PassthroughCameraSamples.EVMTest
             int height = frame.height;
 
             // Create new RenderTextures only if dimensions have changed
-            if (_renderTexture == null || width != _lastWidth || height != _lastHeight)
+            if (renderTexture == null || width != lastWidth || height != lastHeight)
             {
                 Debug.Log($"Creating new RenderTextures. Width={width}, Height={height}");
                 ReleaseRenderTextures4TestYCrCbConversion();
 
                 // Caution! The Cr and Cb could be negative.
-                _renderTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBHalf);
-                _renderTexture.enableRandomWrite = true;
-                _renderTexture.Create();
+                renderTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBHalf);
+                renderTexture.enableRandomWrite = true;
+                renderTexture.Create();
 
-                _ycrcbTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBHalf);
-                _ycrcbTexture.enableRandomWrite = true;
-                _ycrcbTexture.Create();
+                ycrcbTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBHalf);
+                ycrcbTexture.enableRandomWrite = true;
+                ycrcbTexture.Create();
 
-                _rgbTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBHalf);
-                _rgbTexture.enableRandomWrite = true;
-                _rgbTexture.Create();
+                rgbTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBHalf);
+                rgbTexture.enableRandomWrite = true;
+                rgbTexture.Create();
 
-                _lastWidth = width;
-                _lastHeight = height;
+                lastWidth = width;
+                lastHeight = height;
             }
 
-            Graphics.Blit(frame, _renderTexture);
+            Graphics.Blit(frame, renderTexture);
 
             // Convert RGB to YCrCb
-            m_ycrcbComputeShader.SetTexture(0, "InputTexture", _renderTexture);
-            m_ycrcbComputeShader.SetTexture(0, "OutputTexture", _ycrcbTexture);
+            m_ycrcbComputeShader.SetTexture(0, "InputTexture", renderTexture);
+            m_ycrcbComputeShader.SetTexture(0, "OutputTexture", ycrcbTexture);
             m_ycrcbComputeShader.Dispatch(0, width / 8, height / 8, 1);
 
             // Convert YCrCb back to RGB
-            m_rgbComputeShader.SetTexture(0, "InputTexture", _ycrcbTexture);
-            m_rgbComputeShader.SetTexture(0, "OutputTexture", _rgbTexture);
+            m_rgbComputeShader.SetTexture(0, "InputTexture", ycrcbTexture);
+            m_rgbComputeShader.SetTexture(0, "OutputTexture", rgbTexture);
             m_rgbComputeShader.Dispatch(0, width / 8, height / 8, 1);
 
             Debug.Log($"CameraViewerManager Update called. Width={width}, Height={height}, Dim={frame.dimension}, sRGB={frame.isDataSRGB}");
-            Color32[] pixels = GetPixelsFromRenderTexture(_renderTexture);
-            Color32[] rgbPixels = GetPixelsFromRenderTexture(_rgbTexture);
-            Color32[] ycrcbPixels = GetPixelsFromRenderTexture(_ycrcbTexture);
+            Color32[] pixels = GetPixelsFromRenderTexture(renderTexture);
+            Color32[] rgbPixels = GetPixelsFromRenderTexture(rgbTexture);
+            Color32[] ycrcbPixels = GetPixelsFromRenderTexture(ycrcbTexture);
 
             string pixelInfo = $"Pixels: {pixels.Length},\n";
             for (int i = 0; i < Mathf.Min(10, pixels.Length); i++)
@@ -133,26 +154,26 @@ namespace PassthroughCameraSamples.EVMTest
             }
             Debug.Log(pixelInfo);
 
-            m_debugImage.texture = _renderTexture;
-            m_debugImage2.texture = _ycrcbTexture;
-            m_debugImage3.texture = _rgbTexture;
+            m_debugImage.texture = renderTexture;
+            m_debugImage2.texture = ycrcbTexture;
+            m_debugImage3.texture = rgbTexture;
         }
 
-        void TestPyramid(WebCamTexture frame)
+        private void TestPyramid(WebCamTexture frame)
         {
 
             int width = frame.width;
             int height = frame.height;
 
             if (downsampledTextures == null || upsampledTextures == null || addedTextures == null ||
-                _renderTexture == null || width != _lastWidth || height != _lastHeight)
+                renderTexture == null || width != lastWidth || height != lastHeight)
             {
                 Debug.Log($"Creating new RenderTextures for pyramid. Width={width}, Height={height}");
-                _renderTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBHalf);
-                _renderTexture.enableRandomWrite = true;
-                _renderTexture.Create();
-                _lastWidth = width;
-                _lastHeight = height;
+                renderTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBHalf);
+                renderTexture.enableRandomWrite = true;
+                renderTexture.Create();
+                lastWidth = width;
+                lastHeight = height;
                 ReleaseRenderTextures4TestPyramid();
                 downsampledTextures = new RenderTexture[4];
                 upsampledTextures = new RenderTexture[4];
@@ -170,7 +191,7 @@ namespace PassthroughCameraSamples.EVMTest
                     addedTextures[i].Create();
                 }
             }
-            Graphics.Blit(frame, _renderTexture);
+            Graphics.Blit(frame, renderTexture);
 
             // Downsample the RGB texture 4 times, namely Gaussian pyramid
             for (int i = 0; i < 4; i++)
@@ -178,7 +199,7 @@ namespace PassthroughCameraSamples.EVMTest
                 Debug.Log($"Creating downsampled texture {i} with width={width / (1 << (i + 1))}, height={height / (1 << (i + 1))}");
                 if (i == 0)
                 {
-                    m_downsampleComputeShader.SetTexture(0, "InputTexture", _renderTexture);
+                    m_downsampleComputeShader.SetTexture(0, "InputTexture", renderTexture);
                 }
                 else
                 {
@@ -213,10 +234,10 @@ namespace PassthroughCameraSamples.EVMTest
             {
                 if (i == 0)
                 {
-                    Debug.Log($"Texture A: {_renderTexture.width}x{_renderTexture.height}, " +
+                    Debug.Log($"Texture A: {renderTexture.width}x{renderTexture.height}, " +
                               $"Texture B: {upsampledTextures[0].width}x{upsampledTextures[0].height}, " +
                               $"Output Texture: {addedTextures[0].width}x{addedTextures[0].height}");
-                    m_addComputeShader.SetTexture(0, "TextureA", _renderTexture);
+                    m_addComputeShader.SetTexture(0, "TextureA", renderTexture);
                 }
                 else
                 {
@@ -234,6 +255,23 @@ namespace PassthroughCameraSamples.EVMTest
             m_debugImage.texture = addedTextures[0];
         }
 
+        private float deltaTime = 0.0f;
+        private void TestFrameRate(WebCamTexture frame)
+        {
+            deltaTime += Time.deltaTime;
+            if (frame != null)
+            {
+                float currentFps = 1.0f / deltaTime;
+                m_debugText.text = $"Target FPS: {fps}\n" +
+                                    $"Current FPS: {currentFps:F2}\n";
+                Debug.Log($"Current FPS: {currentFps:F2}");
+                deltaTime = 0.0f;
+            }
+            else
+            {
+                Debug.LogWarning("WebCamTexture is null.");
+            }
+        }
 
         private void Update()
         {
@@ -244,33 +282,47 @@ namespace PassthroughCameraSamples.EVMTest
                 // TestYCrCbConversion(frame);
 
                 // 02 Test downsampling and upsampling pyramid
-                TestPyramid(frame);
+                // TestPyramid(frame);
 
+                // 03 Test frame rate
+                // TestFrameRate(frame);
+            }
+        }
+
+        private int fixedFrameCount = 0;
+
+        private void FixedUpdate()
+        {
+            var frame = m_webCamTextureManager.WebCamTexture;
+            if (frame != null)
+            {
+                fixedFrameCount++;
+                Debug.Log($"Fixed Frame rate: {fixedFrameCount / Time.fixedTime}");
             }
         }
 
         private void ReleaseRenderTextures4TestYCrCbConversion()
         {
-            if (_renderTexture != null)
+            if (renderTexture != null)
             {
-                if (RenderTexture.active == _renderTexture)
+                if (RenderTexture.active == renderTexture)
                     RenderTexture.active = null;
-                _renderTexture.Release();
-                _renderTexture = null;
+                renderTexture.Release();
+                renderTexture = null;
             }
-            if (_ycrcbTexture != null)
+            if (ycrcbTexture != null)
             {
-                if (RenderTexture.active == _ycrcbTexture)
+                if (RenderTexture.active == ycrcbTexture)
                     RenderTexture.active = null;
-                _ycrcbTexture.Release();
-                _ycrcbTexture = null;
+                ycrcbTexture.Release();
+                ycrcbTexture = null;
             }
-            if (_rgbTexture != null)
+            if (rgbTexture != null)
             {
-                if (RenderTexture.active == _rgbTexture)
+                if (RenderTexture.active == rgbTexture)
                     RenderTexture.active = null;
-                _rgbTexture.Release();
-                _rgbTexture = null;
+                rgbTexture.Release();
+                rgbTexture = null;
             }
         }
 
