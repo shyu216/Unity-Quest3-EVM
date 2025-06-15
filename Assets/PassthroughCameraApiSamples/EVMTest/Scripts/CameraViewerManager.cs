@@ -392,6 +392,12 @@ namespace PassthroughCameraSamples.EVMTest
             var frame = m_webCamTextureManager.WebCamTexture;
             if (frame != null)
             {
+                // Note: Chrominance attenuation is not implemented
+                if (attenuationFactor < 0.99f)
+                {
+                    Debug.LogWarning("Chrominance attenuation is not implemented in this version.");
+                }
+
                 // EVM Step: set Butterworth coefficients according to current fps
                 fixedFrameCount++;
                 int currentFps = (int)(1.0f / Time.fixedDeltaTime);

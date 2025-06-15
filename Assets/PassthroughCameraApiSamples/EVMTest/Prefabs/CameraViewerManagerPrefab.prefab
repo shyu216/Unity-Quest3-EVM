@@ -362,8 +362,9 @@ MonoBehaviour:
   fh: 1.6666666
   fps: 30
   amplificationFactor: 50
-  nLevels: 4
+  nLevels: 8
   attenuationFactor: 1
+  resetTexturesFlag: 1
 --- !u!1 &6124042056721883567
 GameObject:
   m_ObjectHideFlags: 0
