@@ -37,7 +37,7 @@ namespace PassthroughCameraSamples.EVMTest
         public float fh = 100.0f / 60.0f; // Frequency high, 100 beats per minute
         public float fps = 30.0f; // Sample rate of the camera
         public float amplificationFactor = 50.0f; // Amplification factor
-        public int nLevels = 4; // Number of levels in the pyramid
+        public int nLevels = 8; // Number of levels in the pyramid
         public float attenuationFactor = 1.0f; // Attenuation factor for the Cr and Cb channels, 1 means no attenuation
 
         // Butterworth coefficients
