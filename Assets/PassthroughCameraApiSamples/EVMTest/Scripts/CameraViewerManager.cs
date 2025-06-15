@@ -63,6 +63,8 @@ namespace PassthroughCameraSamples.EVMTest
             // Set frame rate of Update, not work
             // Application.targetFrameRate = (int)fps;
             // m_titleText.text += $" Cam: {m_webCamTextureManager.WebCamTexture.requestedFPS}, Upd: {1.0f / Time.fixedDeltaTime:F2}, App: {Application.targetFrameRate}";
+
+            resetTexturesFlag = true; // Reset textures of EVM
         }
 
         private RenderTexture renderTexture;
@@ -290,14 +292,373 @@ namespace PassthroughCameraSamples.EVMTest
         }
 
         private int fixedFrameCount = 0;
+        private int actualFps = 0;
+
+        private RenderTexture[] gaussianPyramidTextures;
+        private RenderTexture[] prevTextures;
+        private RenderTexture[] lowpass1Textures;
+        private RenderTexture[] lowpass2Textures;
+        private RenderTexture[] filteredTextures;
+        private RenderTexture[] workerTextures;
+        private RenderTexture[] reconstructedTextures;
+        private RenderTexture workerTexture;
+        private RenderTexture outputTexture;
+
+        private int actualNLevels = 0;
+
+        public bool resetTexturesFlag = true; // Reset textures of EVM
+
+        private void PerformCopy(RenderTexture source, RenderTexture destination)
+        {
+            if (source == null || destination == null)
+            {
+                Debug.LogError("Source or destination RenderTexture is null.");
+                return;
+            }
+            if (source.width != destination.width || source.height != destination.height)
+            {
+                Debug.LogError("Source and destination RenderTextures must have the same dimensions.");
+                return;
+            }
+            m_amplificationComputeShader.SetFloat("AmplifyFactor", 1.0f);
+            m_amplificationComputeShader.SetTexture(0, "InputTexture", source);
+            m_amplificationComputeShader.SetTexture(0, "OutputTexture", destination);
+            m_amplificationComputeShader.Dispatch(0, source.width / 8, source.height / 8, 1);
+        }
+
+        // Amplification: RGB: a * AmplifyFactor, Attenuation: 1.0f
+        private void PerformAmplification(RenderTexture source, RenderTexture destination)
+        {
+            if (source == null || destination == null)
+            {
+                Debug.LogError("Source or destination RenderTexture is null.");
+                return;
+            }
+            if (source.width != destination.width || source.height != destination.height)
+            {
+                Debug.LogError("Source and destination RenderTextures must have the same dimensions.");
+                return;
+            }
+            m_amplificationComputeShader.SetFloat("AmplifyFactor", amplificationFactor);
+            m_amplificationComputeShader.SetTexture(0, "InputTexture", source);
+            m_amplificationComputeShader.SetTexture(0, "OutputTexture", destination);
+            m_amplificationComputeShader.Dispatch(0, source.width / 8, source.height / 8, 1);
+        }
+
+        // RGB: 0.5a + 0.5b, Attenuation: 1.0f
+        private void PerformAdd(RenderTexture a, RenderTexture b, RenderTexture output)
+        {
+            if (a == null || b == null || output == null)
+            {
+                Debug.LogError("One of the RenderTextures is null.");
+                return;
+            }
+            if (a.width != b.width || a.height != b.height || a.width != output.width || a.height != output.height)
+            {
+                Debug.LogError("All RenderTextures must have the same dimensions.");
+                return;
+            }
+            m_addComputeShader.SetFloat("ScaleA", 0.5f);
+            m_addComputeShader.SetFloat("ScaleB", 0.5f);
+            m_addComputeShader.SetTexture(0, "TextureA", a);
+            m_addComputeShader.SetTexture(0, "TextureB", b);
+            m_addComputeShader.SetTexture(0, "OutputTexture", output);
+            m_addComputeShader.Dispatch(0, a.width / 8, a.height / 8, 1);
+        }
+
+        // RGB: a - b, Attenuation: 1.0f
+        private void PerformSubtract(RenderTexture a, RenderTexture b, RenderTexture output)
+        {
+            if (a == null || b == null || output == null)
+            {
+                Debug.LogError("One of the RenderTextures is null.");
+                return;
+            }
+            if (a.width != b.width || a.height != b.height || a.width != output.width || a.height != output.height)
+            {
+                Debug.LogError("All RenderTextures must have the same dimensions.");
+                return;
+            }
+            m_addComputeShader.SetFloat("ScaleA", 1.0f);
+            m_addComputeShader.SetFloat("ScaleB", -1.0f);
+            m_addComputeShader.SetTexture(0, "TextureA", a);
+            m_addComputeShader.SetTexture(0, "TextureB", b);
+            m_addComputeShader.SetTexture(0, "OutputTexture", output);
+            m_addComputeShader.Dispatch(0, a.width / 8, a.height / 8, 1);
+        }
 
         private void FixedUpdate()
         {
             var frame = m_webCamTextureManager.WebCamTexture;
             if (frame != null)
             {
+                // EVM Step: set Butterworth coefficients according to current fps
                 fixedFrameCount++;
-                Debug.Log($"Fixed Frame rate: {fixedFrameCount / Time.fixedTime}");
+                int currentFps = (int)(1.0f / Time.fixedDeltaTime);
+                if (currentFps != actualFps)
+                {
+                    actualFps = currentFps;
+                    var (lowA_d, lowB_d) = ButterworthHelper.LowPass(1, fl / fps);
+                    lowA = System.Array.ConvertAll(lowA_d, x => (float)x);
+                    lowB = System.Array.ConvertAll(lowB_d, x => (float)x);
+                    var (highA_d, highB_d) = ButterworthHelper.LowPass(1, fh / fps);
+                    highA = System.Array.ConvertAll(highA_d, x => (float)x);
+                    highB = System.Array.ConvertAll(highB_d, x => (float)x);
+
+                    // Update the Butterworth compute shader with the new coefficients
+                    m_butterworthComputeShader.SetFloats("LowA", lowA);
+                    m_butterworthComputeShader.SetFloats("LowB", lowB);
+                    m_butterworthComputeShader.SetFloats("HighA", highA);
+                    m_butterworthComputeShader.SetFloats("HighB", highB);
+                }
+
+                // EVM Step: prepare RenderTextures for computing
+                int width = frame.width;
+                int height = frame.height;
+                if (width != lastWidth || height != lastHeight)
+                {
+                    ReleaseRenderTextures4EVM();
+
+                    lastWidth = width;
+                    lastHeight = height;
+                    Debug.Log($"Creating new RenderTextures for EVM. Width={width}, Height={height}");
+
+                    int smallerAxis = Mathf.Min(width, height);
+                    actualNLevels = Mathf.Min(nLevels, Mathf.FloorToInt(Mathf.Log(smallerAxis, 2)) - 1);
+                    Debug.Log($"Actual number of levels in the pyramid: {actualNLevels}");
+
+                    // Create RenderTextures for EVM
+                    gaussianPyramidTextures = new RenderTexture[actualNLevels];
+                    prevTextures = new RenderTexture[actualNLevels];
+                    lowpass1Textures = new RenderTexture[actualNLevels];
+                    lowpass2Textures = new RenderTexture[actualNLevels];
+                    filteredTextures = new RenderTexture[actualNLevels];
+                    workerTextures = new RenderTexture[actualNLevels];
+                    reconstructedTextures = new RenderTexture[actualNLevels];
+                    for (int i = 0; i < actualNLevels; i++)
+                    {
+                        int levelWidth = width / (1 << i);
+                        int levelHeight = height / (1 << i);
+                        gaussianPyramidTextures[i] = new RenderTexture(levelWidth, levelHeight, 0, RenderTextureFormat.ARGBHalf);
+                        gaussianPyramidTextures[i].enableRandomWrite = true;
+                        gaussianPyramidTextures[i].Create();
+
+                        prevTextures[i] = new RenderTexture(levelWidth, levelHeight, 0, RenderTextureFormat.ARGBHalf);
+                        prevTextures[i].enableRandomWrite = true;
+                        prevTextures[i].Create();
+
+                        lowpass1Textures[i] = new RenderTexture(levelWidth, levelHeight, 0, RenderTextureFormat.ARGBHalf);
+                        lowpass1Textures[i].enableRandomWrite = true;
+                        lowpass1Textures[i].Create();
+
+                        lowpass2Textures[i] = new RenderTexture(levelWidth, levelHeight, 0, RenderTextureFormat.ARGBHalf);
+                        lowpass2Textures[i].enableRandomWrite = true;
+                        lowpass2Textures[i].Create();
+
+                        filteredTextures[i] = new RenderTexture(levelWidth, levelHeight, 0, RenderTextureFormat.ARGBHalf);
+                        filteredTextures[i].enableRandomWrite = true;
+                        filteredTextures[i].Create();
+
+                        workerTextures[i] = new RenderTexture(levelWidth, levelHeight, 0, RenderTextureFormat.ARGBHalf);
+                        workerTextures[i].enableRandomWrite = true;
+                        workerTextures[i].Create();
+
+                        reconstructedTextures[i] = new RenderTexture(levelWidth, levelHeight, 0, RenderTextureFormat.ARGBHalf);
+                        reconstructedTextures[i].enableRandomWrite = true;
+                        reconstructedTextures[i].Create();
+                    }
+                    workerTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBHalf);
+                    workerTexture.enableRandomWrite = true;
+                    workerTexture.Create();
+                    outputTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBHalf);
+                    outputTexture.enableRandomWrite = true;
+                    outputTexture.Create();
+                }
+
+                // EVM Step: Spatial decomposition, build Gaussian pyramid from the current frame
+                Graphics.Blit(frame, gaussianPyramidTextures[0]);
+                for (int i = 1; i < actualNLevels; i++)
+                {
+                    m_downsampleComputeShader.SetTexture(0, "InputTexture", gaussianPyramidTextures[i - 1]);
+                    m_downsampleComputeShader.SetTexture(0, "OutputTexture", gaussianPyramidTextures[i]);
+                    m_downsampleComputeShader.Dispatch(0, gaussianPyramidTextures[i].width / 8, gaussianPyramidTextures[i].height / 8, 1);
+                }
+
+                // EVM Step: initialize prev, lowpass1, lowpass2
+                if (resetTexturesFlag)
+                {
+                    Debug.LogWarning("Resetting textures for EVM.");
+                    for (int i = 0; i < actualNLevels; i++)
+                    {
+                        Debug.Log($"Resetting textures for level {i}: {prevTextures[i].width}x{prevTextures[i].height}");
+                        PerformCopy(gaussianPyramidTextures[i], prevTextures[i]);
+                        PerformCopy(gaussianPyramidTextures[i], lowpass1Textures[i]);
+                        PerformCopy(gaussianPyramidTextures[i], lowpass2Textures[i]);
+                    }
+                    resetTexturesFlag = false;
+                }
+
+                // EVM Step: Temproal filtering
+                for (int i = 0; i < actualNLevels; i++)
+                {
+                    // Update lowpass1, lowpass2, and copy current frame to prev
+                    Debug.Log($"Computing lowpass1 and lowpass2 for level {i}: {lowpass1Textures[i].width}x{lowpass1Textures[i].height}");
+                    m_butterworthComputeShader.SetTexture(0, "InputTexture", gaussianPyramidTextures[i]);
+                    m_butterworthComputeShader.SetTexture(0, "LowPass1Texture", lowpass1Textures[i]);
+                    m_butterworthComputeShader.SetTexture(0, "LowPass2Texture", lowpass2Textures[i]);
+                    m_butterworthComputeShader.SetTexture(0, "PrevTexture", prevTextures[i]);
+                    m_butterworthComputeShader.Dispatch(0, gaussianPyramidTextures[i].width / 8, gaussianPyramidTextures[i].height / 8, 1);
+
+                    // Obtain the filtered texture
+                    PerformSubtract(lowpass1Textures[i], lowpass2Textures[i], filteredTextures[i]);
+                }
+
+                // EVM Step: Upsample and amplify the filtered textures
+                PerformCopy(filteredTextures[actualNLevels - 1], reconstructedTextures[actualNLevels - 1]);
+                for (int i = actualNLevels - 1; i > 0; i--)
+                {
+                    Debug.Log($"Upsampling and amplifying filtered texture for level {i}: {filteredTextures[i].width}x{filteredTextures[i].height}");
+                    m_upsampleComputeShader.SetTexture(0, "InputTexture", reconstructedTextures[i]);
+                    m_upsampleComputeShader.SetTexture(0, "OutputTexture", workerTextures[i - 1]);
+                    m_upsampleComputeShader.Dispatch(0, reconstructedTextures[i].width / 8, reconstructedTextures[i].height / 8, 1);
+
+                    PerformAdd(filteredTextures[i - 1], workerTextures[i - 1], reconstructedTextures[i - 1]);
+                }
+
+                // EVM Step: Amplify the final reconstructed texture
+                // Extracted motion displacement
+                RenderTexture motionDisplacementTexture = reconstructedTextures[0];
+                // Amplified motion displacement
+                RenderTexture amplifiedMotionDisplacementTexture = workerTexture;
+                PerformAmplification(motionDisplacementTexture, amplifiedMotionDisplacementTexture);
+                // Reconstructed output
+                RenderTexture reconstructedOutputTexture = outputTexture;
+                PerformAdd(gaussianPyramidTextures[0], amplifiedMotionDisplacementTexture, reconstructedOutputTexture);
+
+                // Display
+                m_debugImage.texture = gaussianPyramidTextures[actualNLevels - 1];
+                m_debugImage2.texture = lowpass1Textures[actualNLevels - 1];
+                m_debugImage3.texture = lowpass2Textures[actualNLevels - 1];
+                m_debugImage4.texture = motionDisplacementTexture;
+                m_debugImage5.texture = amplifiedMotionDisplacementTexture;
+                m_magnifiedImage.texture = reconstructedOutputTexture;
+            }
+        }
+
+        private void ReleaseRenderTextures4EVM()
+        {
+            if (gaussianPyramidTextures != null)
+            {
+                foreach (var rt in gaussianPyramidTextures)
+                {
+                    if (rt != null)
+                    {
+                        if (RenderTexture.active == rt)
+                            RenderTexture.active = null;
+                        rt.Release();
+                    }
+                }
+                gaussianPyramidTextures = null;
+            }
+
+            if (prevTextures != null)
+            {
+                foreach (var rt in prevTextures)
+                {
+                    if (rt != null)
+                    {
+                        if (RenderTexture.active == rt)
+                            RenderTexture.active = null;
+                        rt.Release();
+                    }
+                }
+                prevTextures = null;
+            }
+
+            if (lowpass1Textures != null)
+            {
+                foreach (var rt in lowpass1Textures)
+                {
+                    if (rt != null)
+                    {
+                        if (RenderTexture.active == rt)
+                            RenderTexture.active = null;
+                        rt.Release();
+                    }
+                }
+                lowpass1Textures = null;
+            }
+
+            if (lowpass2Textures != null)
+            {
+                foreach (var rt in lowpass2Textures)
+                {
+                    if (rt != null)
+                    {
+                        if (RenderTexture.active == rt)
+                            RenderTexture.active = null;
+                        rt.Release();
+                    }
+                }
+                lowpass2Textures = null;
+            }
+
+            if (filteredTextures != null)
+            {
+                foreach (var rt in filteredTextures)
+                {
+                    if (rt != null)
+                    {
+                        if (RenderTexture.active == rt)
+                            RenderTexture.active = null;
+                        rt.Release();
+                    }
+                }
+                filteredTextures = null;
+            }
+
+            if (workerTextures != null)
+            {
+                foreach (var rt in workerTextures)
+                {
+                    if (rt != null)
+                    {
+                        if (RenderTexture.active == rt)
+                            RenderTexture.active = null;
+                        rt.Release();
+                    }
+                }
+                workerTextures = null;
+            }
+
+            if (reconstructedTextures != null)
+            {
+                foreach (var rt in reconstructedTextures)
+                {
+                    if (rt != null)
+                    {
+                        if (RenderTexture.active == rt)
+                            RenderTexture.active = null;
+                        rt.Release();
+                    }
+                }
+                reconstructedTextures = null;
+            }
+
+            if (workerTexture != null)
+            {
+                if (RenderTexture.active == workerTexture)
+                    RenderTexture.active = null;
+                workerTexture.Release();
+                workerTexture = null;
+            }
+
+            if (outputTexture != null)
+            {
+                if (RenderTexture.active == outputTexture)
+                    RenderTexture.active = null;
+                outputTexture.Release();
+                outputTexture = null;
             }
         }
 
@@ -377,6 +738,7 @@ namespace PassthroughCameraSamples.EVMTest
             Debug.Log("CameraViewerManager OnDestroy called. Releasing RenderTextures.");
             ReleaseRenderTextures4TestYCrCbConversion();
             ReleaseRenderTextures4TestPyramid();
+            ReleaseRenderTextures4EVM();
         }
     }
 }
