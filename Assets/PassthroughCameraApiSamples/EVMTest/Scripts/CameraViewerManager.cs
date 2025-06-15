@@ -386,6 +386,14 @@ namespace PassthroughCameraSamples.EVMTest
             m_addComputeShader.Dispatch(0, a.width / 8, a.height / 8, 1);
         }
 
+        private RenderTexture CreateRenderTexture(int width, int height)
+        {
+            RenderTexture rt = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBHalf);
+            rt.enableRandomWrite = true;
+            rt.Create();
+            return rt;
+        }
+
         private void FixedUpdate()
         {
             var frame = m_webCamTextureManager.WebCamTexture;
@@ -422,8 +430,6 @@ namespace PassthroughCameraSamples.EVMTest
                 int height = frame.height;
                 if (width != lastWidth || height != lastHeight)
                 {
-                    ReleaseRenderTextures4EVM();
-
                     lastWidth = width;
                     lastHeight = height;
                     Debug.Log($"Creating new RenderTextures for EVM. Width={width}, Height={height}");
@@ -447,7 +453,13 @@ namespace PassthroughCameraSamples.EVMTest
                     actualNLevels = Mathf.Min(validNLevels, nLevels);
                     Debug.Log($"Desired number of levels: {nLevels}, Actual number of levels that runs without bugs: {actualNLevels}");
 
+                    // Create RenderTextures for YCrCb conversion
+                    ReleaseRenderTextures4TestYCrCbConversion();
+                    renderTexture = CreateRenderTexture(width, height);
+                    rgbTexture = CreateRenderTexture(width, height);
+
                     // Create RenderTextures for EVM
+                    ReleaseRenderTextures4EVM();
                     gaussianPyramidTextures = new RenderTexture[actualNLevels];
                     prevTextures = new RenderTexture[actualNLevels];
                     lowpass1Textures = new RenderTexture[actualNLevels];
@@ -459,44 +471,26 @@ namespace PassthroughCameraSamples.EVMTest
                     {
                         int levelWidth = width / (1 << i);
                         int levelHeight = height / (1 << i);
-                        gaussianPyramidTextures[i] = new RenderTexture(levelWidth, levelHeight, 0, RenderTextureFormat.ARGBHalf);
-                        gaussianPyramidTextures[i].enableRandomWrite = true;
-                        gaussianPyramidTextures[i].Create();
-
-                        prevTextures[i] = new RenderTexture(levelWidth, levelHeight, 0, RenderTextureFormat.ARGBHalf);
-                        prevTextures[i].enableRandomWrite = true;
-                        prevTextures[i].Create();
-
-                        lowpass1Textures[i] = new RenderTexture(levelWidth, levelHeight, 0, RenderTextureFormat.ARGBHalf);
-                        lowpass1Textures[i].enableRandomWrite = true;
-                        lowpass1Textures[i].Create();
-
-                        lowpass2Textures[i] = new RenderTexture(levelWidth, levelHeight, 0, RenderTextureFormat.ARGBHalf);
-                        lowpass2Textures[i].enableRandomWrite = true;
-                        lowpass2Textures[i].Create();
-
-                        filteredTextures[i] = new RenderTexture(levelWidth, levelHeight, 0, RenderTextureFormat.ARGBHalf);
-                        filteredTextures[i].enableRandomWrite = true;
-                        filteredTextures[i].Create();
-
-                        workerTextures[i] = new RenderTexture(levelWidth, levelHeight, 0, RenderTextureFormat.ARGBHalf);
-                        workerTextures[i].enableRandomWrite = true;
-                        workerTextures[i].Create();
-
-                        reconstructedTextures[i] = new RenderTexture(levelWidth, levelHeight, 0, RenderTextureFormat.ARGBHalf);
-                        reconstructedTextures[i].enableRandomWrite = true;
-                        reconstructedTextures[i].Create();
+                        gaussianPyramidTextures[i] = CreateRenderTexture(levelWidth, levelHeight);
+                        prevTextures[i] = CreateRenderTexture(levelWidth, levelHeight);
+                        lowpass1Textures[i] = CreateRenderTexture(levelWidth, levelHeight);
+                        lowpass2Textures[i] = CreateRenderTexture(levelWidth, levelHeight);
+                        filteredTextures[i] = CreateRenderTexture(levelWidth, levelHeight);
+                        workerTextures[i] = CreateRenderTexture(levelWidth, levelHeight);
+                        reconstructedTextures[i] = CreateRenderTexture(levelWidth, levelHeight);
                     }
-                    workerTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBHalf);
-                    workerTexture.enableRandomWrite = true;
-                    workerTexture.Create();
-                    outputTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBHalf);
-                    outputTexture.enableRandomWrite = true;
-                    outputTexture.Create();
+                    workerTexture = CreateRenderTexture(width, height);
+                    outputTexture = CreateRenderTexture(width, height);
                 }
 
+                // EVM Step: Covert the current frame to YCrCb
+                Graphics.Blit(frame, renderTexture);
+                m_ycrcbComputeShader.SetTexture(0, "InputTexture", renderTexture);
+                m_ycrcbComputeShader.SetTexture(0, "OutputTexture", gaussianPyramidTextures[0]);
+                m_ycrcbComputeShader.Dispatch(0, width / 8, height / 8, 1);
+
                 // EVM Step: Spatial decomposition, build Gaussian pyramid from the current frame
-                Graphics.Blit(frame, gaussianPyramidTextures[0]);
+                // Graphics.Blit(frame, gaussianPyramidTextures[0]);
                 for (int i = 1; i < actualNLevels; i++)
                 {
                     m_downsampleComputeShader.SetTexture(0, "InputTexture", gaussianPyramidTextures[i - 1]);
@@ -555,202 +549,69 @@ namespace PassthroughCameraSamples.EVMTest
                 RenderTexture reconstructedOutputTexture = outputTexture;
                 PerformAdd(gaussianPyramidTextures[0], amplifiedMotionDisplacementTexture, reconstructedOutputTexture);
 
+                // EVM Step: Covert the final output to RGB
+                m_rgbComputeShader.SetTexture(0, "InputTexture", reconstructedOutputTexture);
+                m_rgbComputeShader.SetTexture(0, "OutputTexture", rgbTexture);
+                m_rgbComputeShader.Dispatch(0, width / 8, height / 8, 1);
+
                 // Display
                 m_debugImage.texture = gaussianPyramidTextures[actualNLevels - 1];
                 m_debugImage2.texture = lowpass1Textures[actualNLevels - 1];
                 m_debugImage3.texture = lowpass2Textures[actualNLevels - 1];
                 m_debugImage4.texture = motionDisplacementTexture;
                 m_debugImage5.texture = amplifiedMotionDisplacementTexture;
-                m_magnifiedImage.texture = reconstructedOutputTexture;
+                m_magnifiedImage.texture = rgbTexture;
             }
+        }
+
+        private RenderTexture ReleaseRenderTexture(RenderTexture rt)
+        {
+            if (rt != null)
+            {
+                if (RenderTexture.active == rt)
+                    RenderTexture.active = null;
+                rt.Release();
+            }
+            return null;
+        }
+
+        private RenderTexture[] ReleaseRenderTextures(RenderTexture[] rts)
+        {
+            if (rts != null)
+            {
+                for (int i = 0; i < rts.Length; i++)
+                {
+                    rts[i] = ReleaseRenderTexture(rts[i]);
+                }
+            }
+            return null;
         }
 
         private void ReleaseRenderTextures4EVM()
         {
-            if (gaussianPyramidTextures != null)
-            {
-                foreach (var rt in gaussianPyramidTextures)
-                {
-                    if (rt != null)
-                    {
-                        if (RenderTexture.active == rt)
-                            RenderTexture.active = null;
-                        rt.Release();
-                    }
-                }
-                gaussianPyramidTextures = null;
-            }
-
-            if (prevTextures != null)
-            {
-                foreach (var rt in prevTextures)
-                {
-                    if (rt != null)
-                    {
-                        if (RenderTexture.active == rt)
-                            RenderTexture.active = null;
-                        rt.Release();
-                    }
-                }
-                prevTextures = null;
-            }
-
-            if (lowpass1Textures != null)
-            {
-                foreach (var rt in lowpass1Textures)
-                {
-                    if (rt != null)
-                    {
-                        if (RenderTexture.active == rt)
-                            RenderTexture.active = null;
-                        rt.Release();
-                    }
-                }
-                lowpass1Textures = null;
-            }
-
-            if (lowpass2Textures != null)
-            {
-                foreach (var rt in lowpass2Textures)
-                {
-                    if (rt != null)
-                    {
-                        if (RenderTexture.active == rt)
-                            RenderTexture.active = null;
-                        rt.Release();
-                    }
-                }
-                lowpass2Textures = null;
-            }
-
-            if (filteredTextures != null)
-            {
-                foreach (var rt in filteredTextures)
-                {
-                    if (rt != null)
-                    {
-                        if (RenderTexture.active == rt)
-                            RenderTexture.active = null;
-                        rt.Release();
-                    }
-                }
-                filteredTextures = null;
-            }
-
-            if (workerTextures != null)
-            {
-                foreach (var rt in workerTextures)
-                {
-                    if (rt != null)
-                    {
-                        if (RenderTexture.active == rt)
-                            RenderTexture.active = null;
-                        rt.Release();
-                    }
-                }
-                workerTextures = null;
-            }
-
-            if (reconstructedTextures != null)
-            {
-                foreach (var rt in reconstructedTextures)
-                {
-                    if (rt != null)
-                    {
-                        if (RenderTexture.active == rt)
-                            RenderTexture.active = null;
-                        rt.Release();
-                    }
-                }
-                reconstructedTextures = null;
-            }
-
-            if (workerTexture != null)
-            {
-                if (RenderTexture.active == workerTexture)
-                    RenderTexture.active = null;
-                workerTexture.Release();
-                workerTexture = null;
-            }
-
-            if (outputTexture != null)
-            {
-                if (RenderTexture.active == outputTexture)
-                    RenderTexture.active = null;
-                outputTexture.Release();
-                outputTexture = null;
-            }
+            gaussianPyramidTextures = ReleaseRenderTextures(gaussianPyramidTextures);
+            prevTextures = ReleaseRenderTextures(prevTextures);
+            lowpass1Textures = ReleaseRenderTextures(lowpass1Textures);
+            lowpass2Textures = ReleaseRenderTextures(lowpass2Textures);
+            filteredTextures = ReleaseRenderTextures(filteredTextures);
+            workerTextures = ReleaseRenderTextures(workerTextures);
+            reconstructedTextures = ReleaseRenderTextures(reconstructedTextures);
+            workerTexture = ReleaseRenderTexture(workerTexture);
+            outputTexture = ReleaseRenderTexture(outputTexture);
         }
 
         private void ReleaseRenderTextures4TestYCrCbConversion()
         {
-            if (renderTexture != null)
-            {
-                if (RenderTexture.active == renderTexture)
-                    RenderTexture.active = null;
-                renderTexture.Release();
-                renderTexture = null;
-            }
-            if (ycrcbTexture != null)
-            {
-                if (RenderTexture.active == ycrcbTexture)
-                    RenderTexture.active = null;
-                ycrcbTexture.Release();
-                ycrcbTexture = null;
-            }
-            if (rgbTexture != null)
-            {
-                if (RenderTexture.active == rgbTexture)
-                    RenderTexture.active = null;
-                rgbTexture.Release();
-                rgbTexture = null;
-            }
+            renderTexture = ReleaseRenderTexture(renderTexture);
+            ycrcbTexture = ReleaseRenderTexture(ycrcbTexture);
+            rgbTexture = ReleaseRenderTexture(rgbTexture);
         }
 
         private void ReleaseRenderTextures4TestPyramid()
         {
-
-            if (downsampledTextures != null)
-            {
-                foreach (var rt in downsampledTextures)
-                {
-                    if (rt != null)
-                    {
-                        if (RenderTexture.active == rt)
-                            RenderTexture.active = null;
-                        rt.Release();
-                    }
-                }
-                downsampledTextures = null;
-            }
-
-            if (upsampledTextures != null)
-            {
-                foreach (var rt in upsampledTextures)
-                {
-                    if (rt != null)
-                    {
-                        if (RenderTexture.active == rt)
-                            RenderTexture.active = null;
-                        rt.Release();
-                    }
-                }
-                upsampledTextures = null;
-            }
-
-            if (addedTextures != null)
-            {
-                foreach (var rt in addedTextures)
-                {
-                    if (rt != null)
-                    {
-                        if (RenderTexture.active == rt)
-                            RenderTexture.active = null;
-                        rt.Release();
-                    }
-                }
-                addedTextures = null;
-            }
+            downsampledTextures = ReleaseRenderTextures(downsampledTextures);
+            upsampledTextures = ReleaseRenderTextures(upsampledTextures);
+            addedTextures = ReleaseRenderTextures(addedTextures);
         }
 
         private void OnDestroy()
