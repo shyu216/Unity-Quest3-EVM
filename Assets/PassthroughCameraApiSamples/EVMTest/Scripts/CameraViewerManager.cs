@@ -2,6 +2,7 @@
 
 using System.Collections;
 using Meta.XR.Samples;
+using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -25,26 +26,31 @@ namespace PassthroughCameraSamples.EVMTest
         [SerializeField] private ComputeShader m_downsampleComputeShader;
         [SerializeField] private ComputeShader m_upsampleComputeShader;
         [SerializeField] private ComputeShader m_addComputeShader;
+        [SerializeField] private ComputeShader m_drawROIComputeShader;
+        [SerializeField] private ComputeShader m_sumROIComputeShader;
 
-        [SerializeField] private Text m_signalText;
         [SerializeField] private RawImage m_debugImage;
         [SerializeField] private RawImage m_debugImage2;
         [SerializeField] private RawImage m_debugImage3;
         [SerializeField] private RawImage m_debugImage4;
         [SerializeField] private RawImage m_debugImage5;
+        [SerializeField] private RawImage m_debugImage6;
 
-        public float fl = 60.0f / 60.0f; // Frequency low, 60 beats per minute
-        public float fh = 100.0f / 60.0f; // Frequency high, 100 beats per minute
-        public float fps = 30.0f; // Sample rate of the camera
-        public float amplificationFactor = 50.0f; // Amplification factor
-        public int nLevels = 8; // Number of levels in the pyramid
-        public float attenuationFactor = 1.0f; // Attenuation factor for the Cr and Cb channels, 1 means no attenuation
+        private float fl = 60.0f / 60.0f; // Frequency low, 60 beats per minute
+        private float fh = 100.0f / 60.0f; // Frequency high, 100 beats per minute
+        private float fps = 30.0f; // Sample rate of the camera
+        private float amplificationFactor = 50.0f; // Amplification factor
+        private int nLevels = 8; // Number of levels in the pyramid
+        private float attenuationFactor = 1.0f; // Attenuation factor for the Cr and Cb channels, 1 means no attenuation
 
         // Butterworth coefficients
         private float[] lowA;
         private float[] lowB;
         private float[] highA;
         private float[] highB;
+
+        // ROI Bounding Box, x, y, width, height
+        private int4 roiBoundingBox;
 
         private IEnumerator Start()
         {
@@ -288,6 +294,9 @@ namespace PassthroughCameraSamples.EVMTest
 
                 // 03 Test frame rate
                 // TestFrameRate(frame);
+
+                // Caution! The FixedUpdate reuse the textures of above tests, do not enable them at the same time.
+                // For example, the upsampledTextures is 4 layers in test, but the EVM needs 8 layers as specified by nLevels.
             }
         }
 
@@ -300,12 +309,13 @@ namespace PassthroughCameraSamples.EVMTest
         private RenderTexture[] filteredTextures;
         private RenderTexture[] workerTextures;
         private RenderTexture[] reconstructedTextures;
-        private RenderTexture workerTexture;
+        private RenderTexture amplifiedTexture;
         private RenderTexture outputTexture;
+        private RenderTexture roiTexture;
 
         private int actualNLevels = 0;
 
-        public bool resetTexturesFlag = true; // Reset textures of EVM
+        private bool resetTexturesFlag = true; // Reset textures of EVM
 
         private void PerformCopy(RenderTexture source, RenderTexture destination)
         {
@@ -394,6 +404,11 @@ namespace PassthroughCameraSamples.EVMTest
             return rt;
         }
 
+        private ComputeBuffer inputSumBuffer;
+        private ComputeBuffer inputCountBuffer;
+        private ComputeBuffer outputSumBuffer;
+        private ComputeBuffer outputCountBuffer;
+
         private void FixedUpdate()
         {
             var frame = m_webCamTextureManager.WebCamTexture;
@@ -479,8 +494,23 @@ namespace PassthroughCameraSamples.EVMTest
                         workerTextures[i] = CreateRenderTexture(levelWidth, levelHeight);
                         reconstructedTextures[i] = CreateRenderTexture(levelWidth, levelHeight);
                     }
-                    workerTexture = CreateRenderTexture(width, height);
+                    amplifiedTexture = CreateRenderTexture(width, height);
                     outputTexture = CreateRenderTexture(width, height);
+
+                    // Manually set ROI bounding box, for example, the center of the frame
+                    roiBoundingBox = new int4(width / 2, height / 2, 100, 100);
+                    roiTexture = CreateRenderTexture(width, height);
+                    m_drawROIComputeShader.SetInts("texSize", width, height);
+                    m_drawROIComputeShader.SetInts("roi", roiBoundingBox.x, roiBoundingBox.y, roiBoundingBox.z, roiBoundingBox.w);
+                    m_drawROIComputeShader.SetFloat("borderWidth", 5.0f);
+                    m_drawROIComputeShader.SetFloat("outsideAlpha", 0.6f);
+                    m_sumROIComputeShader.SetInts("texSize", width, height);
+                    m_sumROIComputeShader.SetInts("roi", roiBoundingBox.x, roiBoundingBox.y, roiBoundingBox.z, roiBoundingBox.w);
+
+                    inputSumBuffer = new ComputeBuffer(3, sizeof(float));
+                    inputCountBuffer = new ComputeBuffer(1, sizeof(uint));
+                    outputSumBuffer = new ComputeBuffer(3, sizeof(float));
+                    outputCountBuffer = new ComputeBuffer(1, sizeof(uint));
                 }
 
                 // EVM Step: Covert the current frame to YCrCb
@@ -540,17 +570,11 @@ namespace PassthroughCameraSamples.EVMTest
                 }
 
                 // EVM Step: Amplify the final reconstructed texture
-                // Extracted motion displacement
-                RenderTexture motionDisplacementTexture = reconstructedTextures[0];
-                // Amplified motion displacement
-                RenderTexture amplifiedMotionDisplacementTexture = workerTexture;
-                PerformAmplification(motionDisplacementTexture, amplifiedMotionDisplacementTexture);
-                // Reconstructed output
-                RenderTexture reconstructedOutputTexture = outputTexture;
-                PerformAdd(gaussianPyramidTextures[0], amplifiedMotionDisplacementTexture, reconstructedOutputTexture);
+                PerformAmplification(reconstructedTextures[0], amplifiedTexture);
+                PerformAdd(gaussianPyramidTextures[0], amplifiedTexture, outputTexture);
 
                 // EVM Step: Covert the final output to RGB
-                m_rgbComputeShader.SetTexture(0, "InputTexture", reconstructedOutputTexture);
+                m_rgbComputeShader.SetTexture(0, "InputTexture", outputTexture);
                 m_rgbComputeShader.SetTexture(0, "OutputTexture", rgbTexture);
                 m_rgbComputeShader.Dispatch(0, width / 8, height / 8, 1);
 
@@ -558,9 +582,58 @@ namespace PassthroughCameraSamples.EVMTest
                 m_debugImage.texture = gaussianPyramidTextures[actualNLevels - 1];
                 m_debugImage2.texture = lowpass1Textures[actualNLevels - 1];
                 m_debugImage3.texture = lowpass2Textures[actualNLevels - 1];
-                m_debugImage4.texture = motionDisplacementTexture;
-                m_debugImage5.texture = amplifiedMotionDisplacementTexture;
+                m_debugImage4.texture = reconstructedTextures[0];
+                m_debugImage5.texture = amplifiedTexture;
                 m_magnifiedImage.texture = rgbTexture;
+
+                // Draw ROI
+                m_drawROIComputeShader.SetTexture(0, "Source", renderTexture);
+                m_drawROIComputeShader.SetTexture(0, "Result", roiTexture);
+                m_drawROIComputeShader.Dispatch(0, width / 8, height / 8, 1);
+                m_debugImage6.texture = roiTexture;
+
+                // Sum ROI
+                string DebugInfo = $"ROI (x={roiBoundingBox.x},y={roiBoundingBox.y},w={roiBoundingBox.z},h={roiBoundingBox.w})\n";
+                float[] rgbSumInit = new float[3] { 0, 0, 0 };
+                uint[] roiCountInit = new uint[1] { 0 };
+                inputSumBuffer.SetData(rgbSumInit);
+                inputCountBuffer.SetData(roiCountInit);
+                int kernel = m_sumROIComputeShader.FindKernel("SumROI");
+                m_sumROIComputeShader.SetTexture(kernel, "Source", renderTexture);
+                m_sumROIComputeShader.SetBuffer(kernel, "rgbSum", inputSumBuffer);
+                m_sumROIComputeShader.SetBuffer(kernel, "roiCount", inputCountBuffer);
+                m_sumROIComputeShader.Dispatch(kernel, width / 8, height / 8, 1);
+                float[] rgbSum = new float[3];
+                uint[] roiCount = new uint[1];
+                inputSumBuffer.GetData(rgbSum);
+                inputCountBuffer.GetData(roiCount);
+                Debug.Log($"ROI RGB Sum: R={rgbSum[0] / roiCount[0]:F2}, G={rgbSum[1] / roiCount[0]:F2}, B={rgbSum[2] / roiCount[0]:F2}");
+                if (roiCount[0] > 0)
+                {
+                    DebugInfo += $"ROI RGB Sum: R={rgbSum[0] / roiCount[0]:F2}, G={rgbSum[1] / roiCount[0]:F2}, B={rgbSum[2] / roiCount[0]:F2}\n";
+                }
+                else
+                {
+                    DebugInfo += "ROI RGB Sum: R=0.00, G=0.00, B=0.00\n";
+                }
+                outputSumBuffer.SetData(rgbSumInit);
+                outputCountBuffer.SetData(roiCountInit);
+                m_sumROIComputeShader.SetTexture(kernel, "Source", rgbTexture);
+                m_sumROIComputeShader.SetBuffer(kernel, "rgbSum", outputSumBuffer);
+                m_sumROIComputeShader.SetBuffer(kernel, "roiCount", outputCountBuffer);
+                m_sumROIComputeShader.Dispatch(kernel, width / 8, height / 8, 1);
+                outputSumBuffer.GetData(rgbSum);
+                outputCountBuffer.GetData(roiCount);
+                Debug.Log($"ROI RGB Sum in RGB: R={rgbSum[0] / roiCount[0]:F2}, G={rgbSum[1] / roiCount[0]:F2}, B={rgbSum[2] / roiCount[0]:F2}");
+                if (roiCount[0] > 0)
+                {
+                    DebugInfo += $"ROI RGB Sum in RGB: R={rgbSum[0] / roiCount[0]:F2}, G={rgbSum[1] / roiCount[0]:F2}, B={rgbSum[2] / roiCount[0]:F2}\n";
+                }
+                else
+                {
+                    DebugInfo += "ROI RGB Sum in RGB: R=0.00, G=0.00, B=0.00\n";
+                }
+                m_debugText.text = DebugInfo;
             }
         }
 
@@ -587,6 +660,15 @@ namespace PassthroughCameraSamples.EVMTest
             return null;
         }
 
+        private ComputeBuffer ReleaseComputeBuffer(ComputeBuffer buffer)
+        {
+            if (buffer != null)
+            {
+                buffer.Release();
+            }
+            return null;
+        }
+
         private void ReleaseRenderTextures4EVM()
         {
             gaussianPyramidTextures = ReleaseRenderTextures(gaussianPyramidTextures);
@@ -596,8 +678,13 @@ namespace PassthroughCameraSamples.EVMTest
             filteredTextures = ReleaseRenderTextures(filteredTextures);
             workerTextures = ReleaseRenderTextures(workerTextures);
             reconstructedTextures = ReleaseRenderTextures(reconstructedTextures);
-            workerTexture = ReleaseRenderTexture(workerTexture);
+            amplifiedTexture = ReleaseRenderTexture(amplifiedTexture);
             outputTexture = ReleaseRenderTexture(outputTexture);
+            roiTexture = ReleaseRenderTexture(roiTexture);
+            inputSumBuffer = ReleaseComputeBuffer(inputSumBuffer);
+            inputCountBuffer = ReleaseComputeBuffer(inputCountBuffer);
+            outputSumBuffer = ReleaseComputeBuffer(outputSumBuffer);
+            outputCountBuffer = ReleaseComputeBuffer(outputCountBuffer);
         }
 
         private void ReleaseRenderTextures4TestYCrCbConversion()
