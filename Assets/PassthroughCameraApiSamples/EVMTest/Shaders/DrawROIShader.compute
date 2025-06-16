@@ -2,30 +2,27 @@
 
 RWTexture2D<float4> Result;
 Texture2D<float4> Source;
-cbuffer Params
-{
-    int2 texSize;
-    int4 roi; // x, y, w, h
-    float borderWidth;
-    float outsideAlpha;
-};
+
+int4 roi; // x, y, w, h
+float outsideAlpha = 0.6f;
 
 [numthreads(8,8,1)]
 void DrawROI (uint3 id : SV_DispatchThreadID)
 {
-    float4 color = Source[int2(id.x, id.y)];
+    float4 color = Source[id.xy];
     bool inROI = (id.x >= roi.x && id.x < roi.x + roi.z && id.y >= roi.y && id.y < roi.y + roi.w);
     if (inROI)
     {
-        if (id.x - roi.x < borderWidth || roi.x + roi.z - 1 - id.x < borderWidth ||
-            id.y - roi.y < borderWidth || roi.y + roi.w - 1 - id.y < borderWidth)
+        if (id.x == roi.x || id.x == roi.x + roi.z - 1 || id.y == roi.y || id.y == roi.y + roi.w - 1)
         {
-            color = float4(0,1,0,1); // Green color for border
+            // Draw border
+            color = float4(0, 1, 0, 1); // Green border
         }
     }
     else
     {
         color.a = outsideAlpha; // Make outside ROI transparent
     }
-    Result[int2(id.x, id.y)] = color;
+
+    Result[id.xy] = color;
 }

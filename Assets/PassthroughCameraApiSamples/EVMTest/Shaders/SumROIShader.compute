@@ -1,23 +1,23 @@
 #pragma kernel SumROI
 
 Texture2D<float4> Source;
-RWStructuredBuffer<float> rgbSum; 
-RWStructuredBuffer<uint> roiCount;
-cbuffer Params
-{
-    int2 texSize;
-    int4 roi; // x, y, w, h
-};
+RWStructuredBuffer<uint> Sum; 
+RWStructuredBuffer<uint> Count;
+
+int4 roi; // x, y, w, h
 
 [numthreads(8,8,1)]
 void SumROI (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= roi.x && id.x < roi.x + roi.z && id.y >= roi.y && id.y < roi.y + roi.w)
     {
-        float3 rgb = Source[int2(id.x, id.y)].rgb;
-        InterlockedAdd(rgbSum[0], rgb.r);
-        InterlockedAdd(rgbSum[1], rgb.g);
-        InterlockedAdd(rgbSum[2], rgb.b);
-        InterlockedAdd(roiCount[0], 1);
+        float3 rgb = Source[id.xy].rgb;
+        uint r = uint(round(rgb.r * 255.0f));
+        uint g = uint(round(rgb.g * 255.0f));
+        uint b = uint(round(rgb.b * 255.0f));
+        InterlockedAdd(Sum[0], r);
+        InterlockedAdd(Sum[1], g);
+        InterlockedAdd(Sum[2], b);
+        InterlockedAdd(Count[0], 1);
     }
 }

@@ -404,10 +404,10 @@ namespace PassthroughCameraSamples.EVMTest
             return rt;
         }
 
-        private ComputeBuffer inputSumBuffer;
-        private ComputeBuffer inputCountBuffer;
-        private ComputeBuffer outputSumBuffer;
-        private ComputeBuffer outputCountBuffer;
+        private ComputeBuffer ycrcbSumBuffer;
+        private ComputeBuffer ycrcbCountBuffer;
+        private ComputeBuffer rgbSumBuffer;
+        private ComputeBuffer rgbCountBuffer;
 
         private void FixedUpdate()
         {
@@ -498,19 +498,15 @@ namespace PassthroughCameraSamples.EVMTest
                     outputTexture = CreateRenderTexture(width, height);
 
                     // Manually set ROI bounding box, for example, the center of the frame
-                    roiBoundingBox = new int4(width / 2, height / 2, 100, 100);
+                    roiBoundingBox = new int4(width / 2, height / 2, 200, 200);
                     roiTexture = CreateRenderTexture(width, height);
-                    m_drawROIComputeShader.SetInts("texSize", width, height);
                     m_drawROIComputeShader.SetInts("roi", roiBoundingBox.x, roiBoundingBox.y, roiBoundingBox.z, roiBoundingBox.w);
-                    m_drawROIComputeShader.SetFloat("borderWidth", 5.0f);
-                    m_drawROIComputeShader.SetFloat("outsideAlpha", 0.6f);
-                    m_sumROIComputeShader.SetInts("texSize", width, height);
                     m_sumROIComputeShader.SetInts("roi", roiBoundingBox.x, roiBoundingBox.y, roiBoundingBox.z, roiBoundingBox.w);
 
-                    inputSumBuffer = new ComputeBuffer(3, sizeof(float));
-                    inputCountBuffer = new ComputeBuffer(1, sizeof(uint));
-                    outputSumBuffer = new ComputeBuffer(3, sizeof(float));
-                    outputCountBuffer = new ComputeBuffer(1, sizeof(uint));
+                    ycrcbSumBuffer = new ComputeBuffer(3, sizeof(uint));
+                    ycrcbCountBuffer = new ComputeBuffer(1, sizeof(uint));
+                    rgbSumBuffer = new ComputeBuffer(3, sizeof(uint));
+                    rgbCountBuffer = new ComputeBuffer(1, sizeof(uint));
                 }
 
                 // EVM Step: Covert the current frame to YCrCb
@@ -594,44 +590,45 @@ namespace PassthroughCameraSamples.EVMTest
 
                 // Sum ROI
                 string DebugInfo = $"ROI (x={roiBoundingBox.x},y={roiBoundingBox.y},w={roiBoundingBox.z},h={roiBoundingBox.w})\n";
-                float[] rgbSumInit = new float[3] { 0, 0, 0 };
+                uint[] rgbSumInit = new uint[3] { 0, 0, 0 };
                 uint[] roiCountInit = new uint[1] { 0 };
-                inputSumBuffer.SetData(rgbSumInit);
-                inputCountBuffer.SetData(roiCountInit);
-                int kernel = m_sumROIComputeShader.FindKernel("SumROI");
-                m_sumROIComputeShader.SetTexture(kernel, "Source", renderTexture);
-                m_sumROIComputeShader.SetBuffer(kernel, "rgbSum", inputSumBuffer);
-                m_sumROIComputeShader.SetBuffer(kernel, "roiCount", inputCountBuffer);
-                m_sumROIComputeShader.Dispatch(kernel, width / 8, height / 8, 1);
-                float[] rgbSum = new float[3];
+                rgbSumBuffer.SetData(rgbSumInit);
+                rgbCountBuffer.SetData(roiCountInit);
+                m_sumROIComputeShader.SetTexture(0, "Source", rgbTexture);
+                m_sumROIComputeShader.SetBuffer(0, "Sum", rgbSumBuffer);
+                m_sumROIComputeShader.SetBuffer(0, "Count", rgbCountBuffer);
+                m_sumROIComputeShader.Dispatch(0, width / 8, height / 8, 1);
+                uint[] rgbSum = new uint[3];
                 uint[] roiCount = new uint[1];
-                inputSumBuffer.GetData(rgbSum);
-                inputCountBuffer.GetData(roiCount);
-                Debug.Log($"ROI RGB Sum: R={rgbSum[0] / roiCount[0]:F2}, G={rgbSum[1] / roiCount[0]:F2}, B={rgbSum[2] / roiCount[0]:F2}");
+                rgbSumBuffer.GetData(rgbSum);
+                rgbCountBuffer.GetData(roiCount);
+                Debug.Log($"ROI RGB Sum in RGB: R={rgbSum[0] / roiCount[0]}, G={rgbSum[1] / roiCount[0]}, B={rgbSum[2] / roiCount[0]}");
                 if (roiCount[0] > 0)
                 {
-                    DebugInfo += $"ROI RGB Sum: R={rgbSum[0] / roiCount[0]:F2}, G={rgbSum[1] / roiCount[0]:F2}, B={rgbSum[2] / roiCount[0]:F2}\n";
+                    DebugInfo += $"ROI RGB Sum in RGB: \nR={rgbSum[0] / roiCount[0]}, \nG={rgbSum[1] / roiCount[0]}, \nB={rgbSum[2] / roiCount[0]}\n";
                 }
                 else
                 {
-                    DebugInfo += "ROI RGB Sum: R=0.00, G=0.00, B=0.00\n";
+                    DebugInfo += "ROI RGB Sum in RGB: \nR=Placeholder, \nG=Placeholder, \nB=Placeholder\n";
                 }
-                outputSumBuffer.SetData(rgbSumInit);
-                outputCountBuffer.SetData(roiCountInit);
-                m_sumROIComputeShader.SetTexture(kernel, "Source", rgbTexture);
-                m_sumROIComputeShader.SetBuffer(kernel, "rgbSum", outputSumBuffer);
-                m_sumROIComputeShader.SetBuffer(kernel, "roiCount", outputCountBuffer);
-                m_sumROIComputeShader.Dispatch(kernel, width / 8, height / 8, 1);
-                outputSumBuffer.GetData(rgbSum);
-                outputCountBuffer.GetData(roiCount);
-                Debug.Log($"ROI RGB Sum in RGB: R={rgbSum[0] / roiCount[0]:F2}, G={rgbSum[1] / roiCount[0]:F2}, B={rgbSum[2] / roiCount[0]:F2}");
-                if (roiCount[0] > 0)
+                m_debugText.text = DebugInfo;
+
+                m_sumROIComputeShader.SetTexture(0, "Source", outputTexture);
+                m_sumROIComputeShader.SetBuffer(0, "Sum", ycrcbSumBuffer);
+                m_sumROIComputeShader.SetBuffer(0, "Count", ycrcbCountBuffer);
+                m_sumROIComputeShader.Dispatch(0, width / 8, height / 8, 1);
+                uint[] ycrcbSum = new uint[3];
+                uint[] ycrcbCount = new uint[1];
+                ycrcbSumBuffer.GetData(ycrcbSum);
+                ycrcbCountBuffer.GetData(ycrcbCount);
+                Debug.Log($"ROI YCrCb Sum in YCrCb: Y={ycrcbSum[0] / ycrcbCount[0]}, Cr={ycrcbSum[1] / ycrcbCount[0]}, Cb={ycrcbSum[2] / ycrcbCount[0]}");
+                if (ycrcbCount[0] > 0)
                 {
-                    DebugInfo += $"ROI RGB Sum in RGB: R={rgbSum[0] / roiCount[0]:F2}, G={rgbSum[1] / roiCount[0]:F2}, B={rgbSum[2] / roiCount[0]:F2}\n";
+                    DebugInfo += $"ROI YCrCb Sum in YCrCb: \nY={ycrcbSum[0] / ycrcbCount[0]}, \nCr={ycrcbSum[1] / ycrcbCount[0]}, \nCb={ycrcbSum[2] / ycrcbCount[0]}\n";
                 }
                 else
                 {
-                    DebugInfo += "ROI RGB Sum in RGB: R=0.00, G=0.00, B=0.00\n";
+                    DebugInfo += "ROI YCrCb Sum in YCrCb: \nY=Placeholder, \nCr=Placeholder, \nCb=Placeholder\n";
                 }
                 m_debugText.text = DebugInfo;
             }
@@ -681,10 +678,10 @@ namespace PassthroughCameraSamples.EVMTest
             amplifiedTexture = ReleaseRenderTexture(amplifiedTexture);
             outputTexture = ReleaseRenderTexture(outputTexture);
             roiTexture = ReleaseRenderTexture(roiTexture);
-            inputSumBuffer = ReleaseComputeBuffer(inputSumBuffer);
-            inputCountBuffer = ReleaseComputeBuffer(inputCountBuffer);
-            outputSumBuffer = ReleaseComputeBuffer(outputSumBuffer);
-            outputCountBuffer = ReleaseComputeBuffer(outputCountBuffer);
+            ycrcbSumBuffer = ReleaseComputeBuffer(ycrcbSumBuffer);
+            ycrcbCountBuffer = ReleaseComputeBuffer(ycrcbCountBuffer);
+            rgbSumBuffer = ReleaseComputeBuffer(rgbSumBuffer);
+            rgbCountBuffer = ReleaseComputeBuffer(rgbCountBuffer);
         }
 
         private void ReleaseRenderTextures4TestYCrCbConversion()
