@@ -4,7 +4,8 @@ RWTexture2D<float4> Result;
 Texture2D<float4> Source;
 
 int4 roi; // x, y, w, h
-float outsideAlpha = 0.6f;
+int boxWidth; // Width of the border box
+float outsideAlpha;
 
 [numthreads(8,8,1)]
 void DrawROI (uint3 id : SV_DispatchThreadID)
@@ -13,7 +14,10 @@ void DrawROI (uint3 id : SV_DispatchThreadID)
     bool inROI = (id.x >= roi.x && id.x < roi.x + roi.z && id.y >= roi.y && id.y < roi.y + roi.w);
     if (inROI)
     {
-        if (id.x == roi.x || id.x == roi.x + roi.z - 1 || id.y == roi.y || id.y == roi.y + roi.w - 1)
+        if (
+            (id.x < roi.x + boxWidth || id.x >= roi.x + roi.z - boxWidth) || // Left or right border
+            (id.y < roi.y + boxWidth || id.y >= roi.y + roi.w - boxWidth) // Top or bottom border
+        )
         {
             // Draw border
             color = float4(0, 1, 0, 1); // Green border

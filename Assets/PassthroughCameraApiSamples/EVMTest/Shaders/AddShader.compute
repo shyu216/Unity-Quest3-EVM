@@ -7,8 +7,8 @@ Texture2D<float4> TextureB;
 RWTexture2D<float4> OutputTexture;
 
 // Optional scale factors
-float ScaleA = 1.0;
-float ScaleB = 1.0;
+float ScaleA;
+float ScaleB;
 
 [numthreads(8, 8, 1)]
 void Add (uint3 id : SV_DispatchThreadID)

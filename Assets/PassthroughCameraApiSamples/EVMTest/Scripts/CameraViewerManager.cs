@@ -501,6 +501,8 @@ namespace PassthroughCameraSamples.EVMTest
                     roiBoundingBox = new int4(width / 2, height / 2, 200, 200);
                     roiTexture = CreateRenderTexture(width, height);
                     m_drawROIComputeShader.SetInts("roi", roiBoundingBox.x, roiBoundingBox.y, roiBoundingBox.z, roiBoundingBox.w);
+                    m_drawROIComputeShader.SetInt("boxWidth", 10);
+                    m_drawROIComputeShader.SetFloat("outsideAlpha", 0.6f);
                     m_sumROIComputeShader.SetInts("roi", roiBoundingBox.x, roiBoundingBox.y, roiBoundingBox.z, roiBoundingBox.w);
 
                     ycrcbSumBuffer = new ComputeBuffer(3, sizeof(uint));
