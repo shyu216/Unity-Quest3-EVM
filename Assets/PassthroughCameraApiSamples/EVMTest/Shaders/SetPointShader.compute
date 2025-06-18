@@ -1,0 +1,15 @@
+#pragma kernel SetPoint
+RWStructuredBuffer<float3> PointPositions;
+RWStructuredBuffer<uint> Data;
+
+float AmplitudeY; // Amplitude for the Y position
+float AmplitudeX; // Amplitude for the X position
+
+[numthreads(32,1,1)]
+void SetPoint (uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    float y = Data[i] * AmplitudeY;
+    float x = Data[i] * AmplitudeX;
+    PointPositions[i] = float3(x, y, 0.0f);
+}
