@@ -79,13 +79,17 @@ namespace PassthroughCameraSamples.EVMTest
         private Queue<uint> historyCr = new Queue<uint>(signalQueueLength);
         private Queue<uint> historyCb = new Queue<uint>(signalQueueLength);
 
-
-        private float fl = 60.0f / 60.0f; // Frequency low, 60 beats per minute
-        private float fh = 100.0f / 60.0f; // Frequency high, 100 beats per minute
+        // Heart rate related parameters
+        // private float fl = 60.0f / 60.0f; // Frequency low, 60 beats per minute
+        // private float fh = 100.0f / 60.0f; // Frequency high, 100 beats per minute
         private float fps = 30.0f; // Sample rate of the camera
         private float amplificationFactor = 50.0f; // Amplification factor
         private int nLevels = 8; // Number of levels in the pyramid
         private float attenuationFactor = 1.0f; // Attenuation factor for the Cr and Cb channels, 1 means no attenuation
+
+        // Breath rate related parameters
+        private float fl = 20.0f / 60.0f; // Frequency low, 12 breaths per minute, 1 breath every 5 seconds
+        private float fh = 40.0f / 60.0f; // Frequency high, 20 breaths per minute, 1 breath every 3 seconds
 
         // Butterworth coefficients
         private float[] lowA;
@@ -102,7 +106,7 @@ namespace PassthroughCameraSamples.EVMTest
             {
                 yield return null;
             }
-            m_titleText.text = "EVM Test";
+            m_titleText.text = $"EVM Test, Freq Low: {fl:F2}, Freq High: {fh:F2}, Ampli Factor: {amplificationFactor}, Levels: {nLevels}";
             // Set WebCamTexture GPU texture to the RawImage Ui element
             m_image.texture = m_webCamTextureManager.WebCamTexture;
 
@@ -546,7 +550,7 @@ namespace PassthroughCameraSamples.EVMTest
                     roiTexture = CreateRenderTexture(width, height);
                     m_drawROIComputeShader.SetInts("roi", roiBoundingBox.x, roiBoundingBox.y, roiBoundingBox.z, roiBoundingBox.w);
                     m_drawROIComputeShader.SetInt("boxWidth", 10);
-                    m_drawROIComputeShader.SetFloat("outsideAlpha", 0.6f);
+                    m_drawROIComputeShader.SetFloat("outsideAlpha", 1.0f);
                     m_sumROIComputeShader.SetInts("roi", roiBoundingBox.x, roiBoundingBox.y, roiBoundingBox.z, roiBoundingBox.w);
 
                     ycrcbSumBuffer = new ComputeBuffer(3, sizeof(uint));
