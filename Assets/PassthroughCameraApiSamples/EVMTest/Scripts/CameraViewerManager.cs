@@ -123,11 +123,6 @@ namespace PassthroughCameraSamples.EVMTest
 
             // Set frame rate of FixedUpdate
             Time.fixedDeltaTime = 1.0f / fps;
-            // Set frame rate of WebCamTexture, not work
-            // m_webCamTextureManager.WebCamTexture.requestedFPS = fps;
-            // Set frame rate of Update, not work
-            // Application.targetFrameRate = (int)fps;
-            // m_titleText.text += $" Cam: {m_webCamTextureManager.WebCamTexture.requestedFPS}, Upd: {1.0f / Time.fixedDeltaTime:F2}, App: {Application.targetFrameRate}";
 
             resetTexturesFlag = true; // Reset textures of EVM
         }
@@ -172,7 +167,7 @@ namespace PassthroughCameraSamples.EVMTest
                     lastHeight = height;
                     Debug.Log($"Creating new RenderTextures for EVM. Width={width}, Height={height}");
 
-                    // Caution! Hard to handle the resize in upsample, it is better to resize the input frame before processing the whole EVM steps.
+                    // Caution! Not handle the resize in upsample, it is better to resize the input frame before processing the whole EVM steps.
                     int validNLevels = 1;
                     int w = width;
                     int h = height;
@@ -191,12 +186,9 @@ namespace PassthroughCameraSamples.EVMTest
                     actualNLevels = Mathf.Min(validNLevels, nLevels);
                     Debug.Log($"Desired number of levels: {nLevels}, Actual number of levels that runs without bugs: {actualNLevels}");
 
-                    // Create RenderTextures for YCrCb conversion
-                    inputTexture = CreateRenderTexture(width, height);
-                    rgbTexture = CreateRenderTexture(width, height);
-
                     // Create RenderTextures for EVM
                     ReleaseRenderTextures4EVM();
+                    inputTexture = CreateRenderTexture(width, height);
                     gaussianPyramidTextures = new RenderTexture[actualNLevels];
                     prevTextures = new RenderTexture[actualNLevels];
                     lowpass1Textures = new RenderTexture[actualNLevels];
@@ -218,6 +210,7 @@ namespace PassthroughCameraSamples.EVMTest
                     }
                     amplifiedTexture = CreateRenderTexture(width, height);
                     ycrcbTexture = CreateRenderTexture(width, height);
+                    rgbTexture = CreateRenderTexture(width, height);
 
                     // Manually set ROI bounding box, for example, the center of the frame
                     roiBoundingBox = new int4(width / 2, height / 2, 100, 100);
@@ -243,6 +236,7 @@ namespace PassthroughCameraSamples.EVMTest
                 // Graphics.Blit(frame, gaussianPyramidTextures[0]);
                 for (int i = 1; i < actualNLevels; i++)
                 {
+                    Debug.Log($"Downsampling level {i}: {gaussianPyramidTextures[i - 1].width}x{gaussianPyramidTextures[i - 1].height} to {gaussianPyramidTextures[i].width}x{gaussianPyramidTextures[i].height}");
                     m_downsampleComputeShader.SetTexture(0, "InputTexture", gaussianPyramidTextures[i - 1]);
                     m_downsampleComputeShader.SetTexture(0, "OutputTexture", gaussianPyramidTextures[i]);
                     m_downsampleComputeShader.Dispatch(0, gaussianPyramidTextures[i].width / 8, gaussianPyramidTextures[i].height / 8, 1);
@@ -254,7 +248,7 @@ namespace PassthroughCameraSamples.EVMTest
                     Debug.LogWarning("Resetting textures for EVM.");
                     for (int i = 0; i < actualNLevels; i++)
                     {
-                        Debug.Log($"Resetting textures for level {i}: {prevTextures[i].width}x{prevTextures[i].height}");
+                        Debug.Log($"Resetting prev, lowpass1, lowpass2 textures for level {i}: {prevTextures[i].width}x{prevTextures[i].height}");
                         PerformCopy(gaussianPyramidTextures[i], prevTextures[i]);
                         PerformCopy(gaussianPyramidTextures[i], lowpass1Textures[i]);
                         PerformCopy(gaussianPyramidTextures[i], lowpass2Textures[i]);
@@ -299,18 +293,12 @@ namespace PassthroughCameraSamples.EVMTest
                 m_rgbComputeShader.Dispatch(0, width / 8, height / 8, 1);
 
                 // Display
-                // m_debugImage.texture = gaussianPyramidTextures[actualNLevels - 1];
-                // m_debugImage2.texture = lowpass1Textures[actualNLevels - 1];
-                // m_debugImage3.texture = lowpass2Textures[actualNLevels - 1];
-                // m_debugImage4.texture = reconstructedTextures[0];
-                // m_debugImage5.texture = amplifiedTexture;
                 m_magnifiedImage.texture = rgbTexture;
 
                 // Draw ROI
                 m_drawROIComputeShader.SetTexture(0, "Source", inputTexture);
                 m_drawROIComputeShader.SetTexture(0, "Result", roiTexture);
                 m_drawROIComputeShader.Dispatch(0, width / 8, height / 8, 1);
-                // m_debugImage6.texture = roiTexture;
                 m_image.texture = roiTexture;
 
                 // Sum ROI
@@ -327,14 +315,10 @@ namespace PassthroughCameraSamples.EVMTest
                 uint[] roiCount = new uint[1];
                 rgbSumBuffer.GetData(rgbSum);
                 rgbCountBuffer.GetData(roiCount);
-                Debug.Log($"ROI RGB Sum in RGB: R={rgbSum[0] / roiCount[0]}, G={rgbSum[1] / roiCount[0]}, B={rgbSum[2] / roiCount[0]}");
+                Debug.Log($"ROI Average RGB: R={rgbSum[0] / roiCount[0]}, G={rgbSum[1] / roiCount[0]}, B={rgbSum[2] / roiCount[0]}");
                 if (roiCount[0] > 0)
                 {
-                    DebugInfo += $"ROI RGB Sum in RGB: \nR={rgbSum[0] / roiCount[0]}, \nG={rgbSum[1] / roiCount[0]}, \nB={rgbSum[2] / roiCount[0]}\n";
-                }
-                else
-                {
-                    DebugInfo += "ROI RGB Sum in RGB: \nR=Placeholder, \nG=Placeholder, \nB=Placeholder\n";
+                    DebugInfo += $"R={rgbSum[0] / roiCount[0]},\nG={rgbSum[1] / roiCount[0]},\nB={rgbSum[2] / roiCount[0]}\n";
                 }
                 m_debugText.text = DebugInfo;
 
@@ -346,18 +330,14 @@ namespace PassthroughCameraSamples.EVMTest
                 uint[] ycrcbCount = new uint[1];
                 ycrcbSumBuffer.GetData(ycrcbSum);
                 ycrcbCountBuffer.GetData(ycrcbCount);
-                Debug.Log($"ROI YCrCb Sum in YCrCb: Y={ycrcbSum[0] / ycrcbCount[0]}, Cr={ycrcbSum[1] / ycrcbCount[0]}, Cb={ycrcbSum[2] / ycrcbCount[0]}");
+                Debug.Log($"ROI Average YCrCb: Y={ycrcbSum[0] / ycrcbCount[0]}, Cr={ycrcbSum[1] / ycrcbCount[0]}, Cb={ycrcbSum[2] / ycrcbCount[0]}");
                 if (ycrcbCount[0] > 0)
                 {
-                    DebugInfo += $"ROI YCrCb Sum in YCrCb: \nY={ycrcbSum[0] / ycrcbCount[0]}, \nCr={ycrcbSum[1] / ycrcbCount[0]}, \nCb={ycrcbSum[2] / ycrcbCount[0]}\n";
-                }
-                else
-                {
-                    DebugInfo += "ROI YCrCb Sum in YCrCb: \nY=Placeholder, \nCr=Placeholder, \nCb=Placeholder\n";
+                    DebugInfo += $"Y={ycrcbSum[0] / ycrcbCount[0]},\nCr={ycrcbSum[1] / ycrcbCount[0]},\nCb={ycrcbSum[2] / ycrcbCount[0]}\n";
                 }
                 m_debugText.text = DebugInfo;
 
-
+                // Draw curves
                 DrawCurve(m_curveSystem1, historyY, ycrcbSum[0] / ycrcbCount[0], "Y");
                 DrawCurve(m_curveSystem2, historyCr, ycrcbSum[1] / ycrcbCount[0], "Cr");
                 DrawCurve(m_curveSystem3, historyCb, ycrcbSum[2] / ycrcbCount[0], "Cb");
@@ -514,6 +494,7 @@ namespace PassthroughCameraSamples.EVMTest
 
         private void ReleaseRenderTextures4EVM()
         {
+            Debug.Log("Releasing RenderTextures for EVM.");
             inputTexture = ReleaseRenderTexture(inputTexture);
             gaussianPyramidTextures = ReleaseRenderTextures(gaussianPyramidTextures);
             prevTextures = ReleaseRenderTextures(prevTextures);
