@@ -38,102 +38,47 @@ namespace PassthroughCameraSamples.EVMTest
         [SerializeField] private RawImage m_debugImage5;
         [SerializeField] private RawImage m_debugImage6;
 
-        [SerializeField] private LineRenderer m_lineR;
-        [SerializeField] private LineRenderer m_lineG;
-        [SerializeField] private LineRenderer m_lineB;
-        [SerializeField] private LineRenderer m_lineY;
-        [SerializeField] private LineRenderer m_lineCr;
-        [SerializeField] private LineRenderer m_lineCb;
-        [SerializeField] private LineRenderer m_lineTest;
+        [SerializeField] private GameObject m_curveSystem1;
+        [SerializeField] private GameObject m_curveSystem2;
+        [SerializeField] private GameObject m_curveSystem3;
+        [SerializeField] private GameObject m_curveSystem4;
+        [SerializeField] private GameObject m_curveSystem5;
+        [SerializeField] private GameObject m_curveSystem6;
 
-        private const int CurveLength = 200;
-        private Queue<uint> historyR = new Queue<uint>(CurveLength);
-        private Queue<uint> historyG = new Queue<uint>(CurveLength);
-        private Queue<uint> historyB = new Queue<uint>(CurveLength);
-        private Queue<uint> historyY = new Queue<uint>(CurveLength);
-        private Queue<uint> historyCr = new Queue<uint>(CurveLength);
-        private Queue<uint> historyCb = new Queue<uint>(CurveLength);
-        private Vector3[] resultPositions = new Vector3[CurveLength];
-        private ComputeBuffer dataBuffer;
-        private ComputeBuffer positionBuffer;
-        [SerializeField] private ComputeShader m_curveComputeShader;
-
-        private void InitCurve()
+        private void DrawCurve(GameObject curveSystem, Queue<uint> history, uint newValue, string headerText)
         {
-            for (int i = 0; i < CurveLength; i++)
+            // Update the history queue
+            if (history.Count >= signalQueueLength)
             {
-                historyR.Enqueue(0);
-                historyG.Enqueue(0);
-                historyB.Enqueue(0);
-                historyY.Enqueue(0);
-                historyCr.Enqueue(0);
-                historyCb.Enqueue(0);
+                history.Dequeue();
             }
-            m_curveComputeShader.SetFloat("AmplitudeY", 1000.0f);
-            m_curveComputeShader.SetFloat("AmplitudeX", 1000.0f);
-            dataBuffer = new ComputeBuffer(CurveLength, sizeof(uint));
-            positionBuffer = new ComputeBuffer(CurveLength, sizeof(float) * 3);
-            m_curveComputeShader.SetBuffer(0, "Data", dataBuffer);
-            m_curveComputeShader.SetBuffer(0, "PointPositions", positionBuffer);
+            history.Enqueue(newValue);
+            var historyArray = history.ToArray();
+            var historyArrayFloat = Array.ConvertAll(historyArray, x => (float)x);
+            var minValue = Mathf.Min(historyArrayFloat);
+            var maxValue = Mathf.Max(historyArrayFloat);
 
-            float thickness = 0.001f;
-            m_lineR.startWidth = thickness;
-            m_lineR.endWidth = thickness;
-            m_lineG.startWidth = thickness;
-            m_lineG.endWidth = thickness;
-            m_lineB.startWidth = thickness;
-            m_lineB.endWidth = thickness;
-            m_lineY.startWidth = thickness;
-            m_lineY.endWidth = thickness;
-            m_lineCr.startWidth = thickness;
-            m_lineCr.endWidth = thickness;
-            m_lineCb.startWidth = thickness;
-            m_lineCb.endWidth = thickness;
-            m_lineTest.startWidth = thickness;
-            m_lineTest.endWidth = thickness;
-            m_lineR.positionCount = CurveLength;
-            m_lineG.positionCount = CurveLength;
-            m_lineB.positionCount = CurveLength;
-            m_lineY.positionCount = CurveLength;
-            m_lineCr.positionCount = CurveLength;
-            m_lineCb.positionCount = CurveLength;
-            m_lineTest.positionCount = CurveLength;
-            Vector3[] initialPositions = new Vector3[CurveLength];
-            for (int i = 0; i < CurveLength; i++)
-            {
-                initialPositions[i] = new Vector3(1000 * i, 1000000f * (float)Math.Sin(i), 0);
-            }
-            m_lineTest.SetPositions(initialPositions);
-        }
-        private void ReleaseCurveBuffers()
-        {
-            if (dataBuffer != null)
-            {
-                dataBuffer.Release();
-                dataBuffer = null;
-            }
-            if (positionBuffer != null)
-            {
-                positionBuffer.Release();
-                positionBuffer = null;
-            }
+            var maxTrans = curveSystem.transform.Find("UpperCurve").position;
+            var minTrans = curveSystem.transform.Find("LowerCurve").position;
+            Debug.Log($"Max: {maxTrans}, Min: {minTrans}");
+            var vertex = maxTrans - minTrans;
+            float scale = (newValue - minValue) / (maxValue - minValue);
+            var newPos = minTrans + vertex * scale;
+            curveSystem.transform.Find("DataCurve").position = newPos;
+            Debug.Log($"DrawCurve: {curveSystem.name}, New Position: {newPos}, Scale: {scale}");
+            string header = $"{headerText} Max: {maxValue}, Min: {minValue}, Current: {newValue}";
+            curveSystem.transform.Find("HeaderText").GetComponent<Text>().text = header;
+            Debug.Log(header);
         }
 
-        private void DrawCurve(LineRenderer line, Queue<uint> queue, uint newValue)
-        {
-            if (line == null || m_curveComputeShader == null)
-            {
-                Debug.LogError("DrawCurve Error: LineRenderer or ComputeShader is not assigned.");
-                return;
-            }
-            queue.Dequeue();
-            queue.Enqueue(newValue);
-            uint[] data = queue.ToArray();
-            dataBuffer.SetData(data);
-            m_curveComputeShader.Dispatch(0, CurveLength / 32, 1, 1);
-            positionBuffer.GetData(resultPositions);
-            line.SetPositions(resultPositions);
-        }
+        private const int signalQueueLength = 200;
+        private Queue<uint> historyR = new Queue<uint>(signalQueueLength);
+        private Queue<uint> historyG = new Queue<uint>(signalQueueLength);
+        private Queue<uint> historyB = new Queue<uint>(signalQueueLength);
+        private Queue<uint> historyY = new Queue<uint>(signalQueueLength);
+        private Queue<uint> historyCr = new Queue<uint>(signalQueueLength);
+        private Queue<uint> historyCb = new Queue<uint>(signalQueueLength);
+
 
         private float fl = 60.0f / 60.0f; // Frequency low, 60 beats per minute
         private float fh = 100.0f / 60.0f; // Frequency high, 100 beats per minute
@@ -170,7 +115,6 @@ namespace PassthroughCameraSamples.EVMTest
             // m_titleText.text += $" Cam: {m_webCamTextureManager.WebCamTexture.requestedFPS}, Upd: {1.0f / Time.fixedDeltaTime:F2}, App: {Application.targetFrameRate}";
 
             resetTexturesFlag = true; // Reset textures of EVM
-            InitCurve();
         }
 
         private RenderTexture renderTexture;
@@ -598,7 +542,7 @@ namespace PassthroughCameraSamples.EVMTest
                     outputTexture = CreateRenderTexture(width, height);
 
                     // Manually set ROI bounding box, for example, the center of the frame
-                    roiBoundingBox = new int4(width / 2, height / 2, 200, 200);
+                    roiBoundingBox = new int4(width / 2, height / 2, 100, 100);
                     roiTexture = CreateRenderTexture(width, height);
                     m_drawROIComputeShader.SetInts("roi", roiBoundingBox.x, roiBoundingBox.y, roiBoundingBox.z, roiBoundingBox.w);
                     m_drawROIComputeShader.SetInt("boxWidth", 10);
@@ -677,18 +621,19 @@ namespace PassthroughCameraSamples.EVMTest
                 m_rgbComputeShader.Dispatch(0, width / 8, height / 8, 1);
 
                 // Display
-                m_debugImage.texture = gaussianPyramidTextures[actualNLevels - 1];
-                m_debugImage2.texture = lowpass1Textures[actualNLevels - 1];
-                m_debugImage3.texture = lowpass2Textures[actualNLevels - 1];
-                m_debugImage4.texture = reconstructedTextures[0];
-                m_debugImage5.texture = amplifiedTexture;
+                // m_debugImage.texture = gaussianPyramidTextures[actualNLevels - 1];
+                // m_debugImage2.texture = lowpass1Textures[actualNLevels - 1];
+                // m_debugImage3.texture = lowpass2Textures[actualNLevels - 1];
+                // m_debugImage4.texture = reconstructedTextures[0];
+                // m_debugImage5.texture = amplifiedTexture;
                 m_magnifiedImage.texture = rgbTexture;
 
                 // Draw ROI
                 m_drawROIComputeShader.SetTexture(0, "Source", renderTexture);
                 m_drawROIComputeShader.SetTexture(0, "Result", roiTexture);
                 m_drawROIComputeShader.Dispatch(0, width / 8, height / 8, 1);
-                m_debugImage6.texture = roiTexture;
+                // m_debugImage6.texture = roiTexture;
+                m_image.texture = roiTexture;
 
                 // Sum ROI
                 string DebugInfo = $"ROI (x={roiBoundingBox.x},y={roiBoundingBox.y},w={roiBoundingBox.z},h={roiBoundingBox.w})\n";
@@ -734,18 +679,13 @@ namespace PassthroughCameraSamples.EVMTest
                 }
                 m_debugText.text = DebugInfo;
 
-                DrawCurve(m_lineY, historyY, ycrcbSum[0] / ycrcbCount[0]);
-                DrawCurve(m_lineCr, historyCr, ycrcbSum[1] / ycrcbCount[0]);
-                DrawCurve(m_lineCb, historyCb, ycrcbSum[2] / ycrcbCount[0]);
-                DrawCurve(m_lineR, historyR, rgbSum[0] / roiCount[0]);
-                DrawCurve(m_lineG, historyG, rgbSum[1] / roiCount[0]);
-                DrawCurve(m_lineB, historyB, rgbSum[2] / roiCount[0]);
-                Debug.Log($"History Y: {string.Join(", ", historyY)}\n" +
-                          $"History Cr: {string.Join(", ", historyCr)}\n" +
-                          $"History Cb: {string.Join(", ", historyCb)}\n" +
-                          $"History R: {string.Join(", ", historyR)}\n" +
-                          $"History G: {string.Join(", ", historyG)}\n" +
-                          $"History B: {string.Join(", ", historyB)}");
+
+                DrawCurve(m_curveSystem1, historyY, ycrcbSum[0] / ycrcbCount[0], "Y");
+                DrawCurve(m_curveSystem2, historyCr, ycrcbSum[1] / ycrcbCount[0], "Cr");
+                DrawCurve(m_curveSystem3, historyCb, ycrcbSum[2] / ycrcbCount[0], "Cb");
+                DrawCurve(m_curveSystem4, historyR, rgbSum[0] / roiCount[0], "R");
+                DrawCurve(m_curveSystem5, historyG, rgbSum[1] / roiCount[0], "G");
+                DrawCurve(m_curveSystem6, historyB, rgbSum[2] / roiCount[0], "B");
             }
         }
 
@@ -819,7 +759,6 @@ namespace PassthroughCameraSamples.EVMTest
             ReleaseRenderTextures4TestYCrCbConversion();
             ReleaseRenderTextures4TestPyramid();
             ReleaseRenderTextures4EVM();
-            ReleaseCurveBuffers();
         }
     }
 }
