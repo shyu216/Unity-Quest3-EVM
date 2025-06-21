@@ -108,15 +108,11 @@ namespace EVM
         private Queue<uint> historyCr = new Queue<uint>(signalQueueLength);
         private Queue<uint> historyCb = new Queue<uint>(signalQueueLength);
 
-
-
-        private IEnumerator Start()
+        private void Awake()
         {
-            while (m_webCamTextureManager.WebCamTexture == null)
-            {
-                yield return null;
-            }
-            m_titleText.text = $"EVM Test, Freq Low: {fl:F2}, Freq High: {fh:F2}, Ampli Factor: {amplificationFactor}, Levels: {nLevels}";
+            Debug.Log($"{nameof(Awake)}() was called");
+            // Resize the WebCamTexture
+            m_webCamTextureManager.RequestedResolution = new Vector2Int(320, 240);
 
             // Set frame rate of FixedUpdate
             Time.fixedDeltaTime = 1.0f / fps;
@@ -124,8 +120,19 @@ namespace EVM
             resetTexturesFlag = true; // Reset textures of EVM
         }
 
+        private IEnumerator Start()
+        {
+            Debug.Log($"{nameof(Start)}() was called");
+            while (m_webCamTextureManager.WebCamTexture == null)
+            {
+                yield return null;
+            }
+            m_titleText.text = $"EVM Test, Freq Low: {fl:F2}, Freq High: {fh:F2}, Ampli Factor: {amplificationFactor}, Levels: {nLevels}";
+        }
+
         private void FixedUpdate()
         {
+            Debug.Log($"{nameof(FixedUpdate)}() was called");
             var frame = m_webCamTextureManager.WebCamTexture;
             if (frame != null)
             {
@@ -298,7 +305,8 @@ namespace EVM
                 m_magnifiedImage.texture = roiTexture;
 
                 // Sum ROI
-                string DebugInfo = $"ROI (x={roiBoundingBox.x},y={roiBoundingBox.y},w={roiBoundingBox.z},h={roiBoundingBox.w})\n";
+                string DebugInfo = $"Reso: {width}x{height}, Fps: {actualFps}, Levels: {actualNLevels}\n" +
+                    $"ROI (x={roiBoundingBox.x},y={roiBoundingBox.y},w={roiBoundingBox.z},h={roiBoundingBox.w})\n";
                 uint[] rgbSumInit = new uint[3] { 0, 0, 0 };
                 uint[] roiCountInit = new uint[1] { 0 };
                 rgbSumBuffer.SetData(rgbSumInit);
