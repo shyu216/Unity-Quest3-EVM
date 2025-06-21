@@ -6,12 +6,15 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
+    path: Assets/StarterSamples/Usage/StartScene.unity
+    guid: 071fba5195bd4b04eab8668985aa1683
+  - enabled: 1
+    path: Assets/EVM/EVM.unity
+    guid: ebde17ab21ab7084896fa480b4a813d5
+  - enabled: 0
     path: Assets/PassthroughCameraApiSamples/StartScene/StartScene.unity
     guid: 69e1b31c45bac42f88f75017ee404de1
   - enabled: 1
-    path: Assets/PassthroughCameraApiSamples/EVMTest/EVMTest.unity
-    guid: f86c75c197e4d12479ae6ad09558435e
-  - enabled: 0
     path: Assets/PassthroughCameraApiSamples/CameraViewer/CameraViewer.unity
     guid: ad5bb12b10679b840999aa322aa7a491
   - enabled: 0
@@ -26,6 +29,15 @@ EditorBuildSettings:
   - enabled: 0
     path: Assets/PassthroughCameraApiSamples/ShaderSample/ShaderSample.unity
     guid: 708e8dca6055146b28afe2481f141457
+  - enabled: 1
+    path: Assets/StarterSamples/Usage/OVROverlay.unity
+    guid: d31b44aac77e1684d861792b23d46a8b
+  - enabled: 1
+    path: Assets/StarterSamples/Usage/Passthrough.unity
+    guid: 58e5fc2486c774a4e88ac76261268d52
+  - enabled: 1
+    path: Assets/StarterSamples/Usage/OVROverlayCanvas.unity
+    guid: af6fdd821de21814caa6187d466b6d2b
   m_configObjects:
     Unity.XR.Oculus.Settings: {fileID: 11400000, guid: f2bf97b3acdb64248a707c407c9fc54e, type: 2}
     com.unity.xr.management.loader_settings: {fileID: 11400000, guid: a971eac5e950046e586c5e153e32d05c, type: 2}
