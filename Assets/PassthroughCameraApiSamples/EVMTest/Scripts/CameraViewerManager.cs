@@ -16,7 +16,6 @@ namespace PassthroughCameraSamples.EVMTest
         // Create a field to attach the reference to the WebCamTextureManager prefab
         [SerializeField] private WebCamTextureManager m_webCamTextureManager;
         [SerializeField] private Text m_debugText;
-        [SerializeField] private RawImage m_image;
         [SerializeField] private Text m_titleText;
         [SerializeField] private RawImage m_magnifiedImage;
 
@@ -118,8 +117,6 @@ namespace PassthroughCameraSamples.EVMTest
                 yield return null;
             }
             m_titleText.text = $"EVM Test, Freq Low: {fl:F2}, Freq High: {fh:F2}, Ampli Factor: {amplificationFactor}, Levels: {nLevels}";
-            // Set WebCamTexture GPU texture to the RawImage Ui element
-            m_image.texture = m_webCamTextureManager.WebCamTexture;
 
             // Set frame rate of FixedUpdate
             Time.fixedDeltaTime = 1.0f / fps;
@@ -292,14 +289,13 @@ namespace PassthroughCameraSamples.EVMTest
                 m_rgbComputeShader.SetTexture(0, "OutputTexture", rgbTexture);
                 m_rgbComputeShader.Dispatch(0, width / 8, height / 8, 1);
 
-                // Display
-                m_magnifiedImage.texture = rgbTexture;
-
                 // Draw ROI
-                m_drawROIComputeShader.SetTexture(0, "Source", inputTexture);
+                m_drawROIComputeShader.SetTexture(0, "Source", rgbTexture);
                 m_drawROIComputeShader.SetTexture(0, "Result", roiTexture);
                 m_drawROIComputeShader.Dispatch(0, width / 8, height / 8, 1);
-                m_image.texture = roiTexture;
+
+                // Display
+                m_magnifiedImage.texture = roiTexture;
 
                 // Sum ROI
                 string DebugInfo = $"ROI (x={roiBoundingBox.x},y={roiBoundingBox.y},w={roiBoundingBox.z},h={roiBoundingBox.w})\n";
